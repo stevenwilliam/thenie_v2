@@ -52,8 +52,9 @@ expired".
 | Placeholder | What it is | Example |
 |-------------|-----------|---------|
 | `thenie.sunshinefood.co.id` | the subdomain to serve on | *(suggested — change everywhere below if you use another)* |
-| `SERVER_IP` | your machine's public IP | `203.0.113.10` |
-| `SSH_USER` | the user you log into the server as | `ubuntu` |
+| `SERVER_IP` | your machine's public IP | `172.236.152.44` |
+| `SSH_USER` | the user you log into the server as | `appuser` |
+| `SSH_PORT` | the SSH port — **this machine uses 30022, not 22** | `30022` |
 | `you@sunshinefood.co.id` | email for the TLS certificate expiry warnings | — |
 
 There are **no passwords and no secrets** in this deployment.
@@ -89,8 +90,12 @@ issue a certificate otherwise.
 ## Part 2 — Log in and sanity-check the machine
 
 ```bash
-ssh SSH_USER@SERVER_IP
+ssh -p 30022 appuser@172.236.152.44
 ```
+
+> **Note the port.** This machine does not use the default SSH port 22. `ssh`
+> takes a lower-case `-p`, `scp` takes an upper-case `-P` — mixing them up is a
+> common and confusing failure.
 
 Confirm Nginx is running and is your front door:
 
@@ -145,8 +150,8 @@ The repository is private, so the server needs read access. Create a **deploy
 key** — a key that can read this one repository and nothing else:
 
 ```bash
-ssh-keygen -t ed25519 -C "thenie-deploy" -f /home/SSH_USER/.ssh/thenie_deploy -N ""
-cat /home/SSH_USER/.ssh/thenie_deploy.pub
+ssh-keygen -t ed25519 -C "thenie-deploy" -f /home/appuser/.ssh/thenie_deploy -N ""
+cat /home/appuser/.ssh/thenie_deploy.pub
 ```
 
 Copy the printed line. In GitHub, open
@@ -157,7 +162,7 @@ unchecked** → **Add key**.
 Tell SSH to use that key for GitHub:
 
 ```bash
-sudo vi /home/SSH_USER/.ssh/config
+sudo vi /home/appuser/.ssh/config
 ```
 
 Add:
@@ -166,15 +171,15 @@ Add:
 Host github-thenie
     HostName github.com
     User git
-    IdentityFile /home/SSH_USER/.ssh/thenie_deploy
+    IdentityFile /home/appuser/.ssh/thenie_deploy
     IdentitiesOnly yes
 ```
 
 Fix the permissions (SSH refuses loose ones):
 
 ```bash
-chmod 600 /home/SSH_USER/.ssh/config /home/SSH_USER/.ssh/thenie_deploy
-chmod 644 /home/SSH_USER/.ssh/thenie_deploy.pub
+chmod 600 /home/appuser/.ssh/config /home/appuser/.ssh/thenie_deploy
+chmod 644 /home/appuser/.ssh/thenie_deploy.pub
 ```
 
 Test, then clone:
@@ -197,10 +202,18 @@ sudo cp /opt/thenie_v2/site/index.html /var/www/thenie/index.html
 
 ### Option B — copy straight from your laptop
 
-Run this **on your own machine**, not on the server:
+Run this **on your own machine, not on the server**. This is the single most
+common mistake in this runbook: if your prompt reads `appuser@…:/var/www/thenie$`
+you are on the server, and `scp` will fail with
+
+```
+scp: stat local "/home/dev/projects/thenie_v2/site/index.html": No such file or directory
+```
+
+because that path exists only on your dev machine. Type `exit` first, then:
 
 ```bash
-scp /home/dev/projects/thenie_v2/site/index.html SSH_USER@SERVER_IP:/tmp/index.html
+scp -P 30022 /home/dev/projects/thenie_v2/site/index.html appuser@172.236.152.44:/tmp/index.html
 ```
 
 Then back **on the server**:
@@ -209,7 +222,28 @@ Then back **on the server**:
 sudo mv /tmp/index.html /var/www/thenie/index.html
 ```
 
-### Set ownership and permissions (both options)
+### Option C — pull it from the live site, on the server
+
+The quickest route when you are already logged in, and it needs no key and no
+laptop. The mirror is byte-identical to the live page, so fetching upstream
+gives the same file — and the hash check below is what proves it:
+
+```bash
+curl -sSL https://thenie-catering-order.netlify.app/ -o /tmp/index.html
+sha256sum /tmp/index.html
+```
+
+Then:
+
+```bash
+sudo mv /tmp/index.html /var/www/thenie/index.html
+```
+
+**Only use this if the hash matches** the value in the next section. If upstream
+has changed since 2026-08-22 it will not, and you should use Option A or B to
+deploy the captured version instead of a newer, undocumented one.
+
+### Set ownership and permissions (all options)
 
 ```bash
 sudo chown -R www-data:www-data /var/www/thenie
