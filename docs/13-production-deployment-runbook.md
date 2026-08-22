@@ -206,11 +206,21 @@ git clone github-thenie:stevenwilliam/thenie_v2.git /opt/thenie_v2
 The test prints `Hi stevenwilliam/thenie_v2! You've successfully authenticated`
 — "does not provide shell access" alongside it is normal and not an error.
 
-Publish the file:
+Build the page, then publish it:
 
 ```bash
-sudo cp /opt/thenie_v2/site/index.html /var/www/thenie/index.html
+cd /opt/thenie_v2
+./scripts/build-site.sh
+sudo cp /opt/thenie_v2/dist/index.html /var/www/thenie/index.html
 ```
+
+`build-site.sh` stitches the untouched mirror together with the overlays in
+`site/overlays/` — today that means the floating WhatsApp button, see
+[[14-whatsapp-fab]] — and writes `dist/index.html`. It needs nothing but bash
+and coreutils, and it verifies the mirror's hash before it builds. **`dist/` is
+git-ignored, so it does not arrive with `git pull`; you build it on the server.**
+Copying `site/index.html` directly still works, but publishes the page *without*
+the WhatsApp button.
 
 ### Option B — copy straight from your laptop
 
@@ -222,10 +232,13 @@ you are on the server, and `scp` will fail with
 scp: stat local "/home/dev/projects/thenie_v2/site/index.html": No such file or directory
 ```
 
-because that path exists only on your dev machine. Type `exit` first, then:
+because that path exists only on your dev machine. Type `exit` first, build,
+then copy the **built** file (`dist/`, not `site/`):
 
 ```bash
-scp -P 30022 /home/dev/projects/thenie_v2/site/index.html appuser@172.236.152.44:/tmp/index.html
+cd /home/dev/projects/thenie_v2
+./scripts/build-site.sh
+scp -P 30022 /home/dev/projects/thenie_v2/dist/index.html appuser@172.236.152.44:/tmp/index.html
 ```
 
 Then back **on the server**:
@@ -235,6 +248,10 @@ sudo mv /tmp/index.html /var/www/thenie/index.html
 ```
 
 ### Option C — pull it from the live site, on the server
+
+> **This deploys the mockup *without* the floating WhatsApp button.** Upstream
+> is the original Netlify capture; it knows nothing about our overlays. Use it
+> only to reproduce the pristine mirror — for the real site, use Option A or B.
 
 The quickest route when you are already logged in, and it needs no key and no
 laptop. The mirror is byte-identical to the live page, so fetching upstream
@@ -267,9 +284,16 @@ sudo chmod 644 /var/www/thenie/index.html
 
 ```bash
 sha256sum /var/www/thenie/index.html
+grep -c 'class="wa-fab"' /var/www/thenie/index.html   # must print 1
 ```
 
-It **must** print:
+The `sha256sum` must match what `sha256sum dist/index.html` printed on the
+machine you built on — it changes every time an overlay changes, so compare the
+two, do not memorise a value. The `grep` is the quick "did the WhatsApp button
+make it" check.
+
+If you deployed the **pristine mirror** via Option C, `grep` prints `0` and the
+hash must instead be exactly:
 
 ```
 9d4cfefba381b6a8c3adbc822281e701c7b8cca98d1e7d40b5ac1ccafbb0df49
@@ -509,25 +533,42 @@ press send in WhatsApp** unless you want the business to receive a test order.
 If you used **Option A**:
 
 ```bash
+# 1. keep the current version, so Part 10 can roll back to it
+sudo cp /var/www/thenie/index.html /var/www/thenie/index.html.bak
+
+# 2. pull, rebuild, publish
 cd /opt/thenie_v2
 git pull
-sudo cp /opt/thenie_v2/site/index.html /var/www/thenie/index.html
+./scripts/build-site.sh
+sudo cp /opt/thenie_v2/dist/index.html /var/www/thenie/index.html
 sudo chown www-data:www-data /var/www/thenie/index.html
 sudo chmod 644 /var/www/thenie/index.html
+
+# 3. check
 sha256sum /var/www/thenie/index.html
+grep -c 'class="wa-fab"' /var/www/thenie/index.html   # 1 = WhatsApp button is live
 ```
 
-If you used **Option B**, repeat the `scp` from Part 4.
+**Do not skip `./scripts/build-site.sh`.** `dist/` is git-ignored, so `git pull`
+brings the mirror and the overlays but never the built file — pulling without
+rebuilding leaves the old page in place and looks like the deploy silently did
+nothing.
+
+If `git pull` refuses with *"Your local changes would be overwritten"*, the
+checkout has been edited on the server. Throw the local edits away and pull
+again — nothing on the server is meant to be authored there:
+
+```bash
+cd /opt/thenie_v2
+git checkout -- .
+git pull
+```
+
+If you used **Option B**, rebuild on your laptop and repeat the `scp` from Part 4.
 
 **No Nginx reload is needed** — Nginx reads the file from disk on each request.
 The `must-revalidate` header means returning visitors pick the new file up
 immediately.
-
-Always keep a copy of the previous version first:
-
-```bash
-sudo cp /var/www/thenie/index.html /var/www/thenie/index.html.bak
-```
 
 ---
 

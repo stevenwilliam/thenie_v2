@@ -23,6 +23,7 @@ Where a rule was inferred rather than stated on the page, it is marked
 | 08 | [[08-technical-inventory]] | File composition, JS surface, what the page does *not* do |
 | 09 | [[09-open-questions]] | What the mockup does not answer |
 | 13 | [[13-production-deployment-runbook]] | Deploy to the Ubuntu + Nginx server |
+| 14 | [[14-whatsapp-fab]] | The floating WhatsApp button — our one addition to the mirror |
 |  — | [[PROGRESS]] | Build status |
 |  — | `screenshots/` | Rendered evidence — home, menu, order, catering kantor |
 |  — | `../tests/README.md` | Pricing-engine tests — 31 passing, run against the real code |

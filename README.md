@@ -19,13 +19,21 @@ never hand-edit the mirror to match.
 Every observation in `docs/` was read *out of* that file. The documentation
 describes the mockup; it does not modify it.
 
+**Additions go in `site/overlays/`, never in the mirror.** `scripts/build-site.sh`
+stitches mirror + overlays into `dist/index.html`, and that built file is what
+gets deployed. Today there is one overlay: the floating WhatsApp button
+([`docs/14-whatsapp-fab.md`](docs/14-whatsapp-fab.md)).
+
 ## Layout
 
 ```
 site/index.html    the mirror — 4,615,031 bytes, self-contained, zero external requests
+site/overlays/     our additions, injected at build time (WhatsApp button)
+dist/index.html    build output — what the server serves (git-ignored)
 docs/              documentation reconstructed from the mirror (also an Obsidian vault)
 docs/screenshots/  rendered evidence — home, menu, order, catering kantor
-scripts/           verify-mirror.sh — re-prove the capture against disk and upstream
+scripts/           build-site.sh — mirror + overlays → dist/
+                   verify-mirror.sh — re-prove the capture against disk and upstream
 tests/             pricing-engine tests, run against code extracted from the mirror
 ```
 
@@ -49,13 +57,25 @@ Start at [`docs/00-index.md`](docs/00-index.md).
 In Obsidian: **Open folder as vault** → select `/home/dev/projects/thenie_v2/docs`.
 No account, no sync subscription, no login required.
 
+## Building
+
+```bash
+./scripts/build-site.sh
+```
+
+Writes `dist/index.html` — the mirror with every overlay in `site/overlays/`
+injected before `</body>`. It re-verifies the mirror's SHA-256 first and refuses
+to build from a modified capture.
+
 ## Running it locally
 
 ```bash
-python3 -m http.server 8080 --directory /home/dev/projects/thenie_v2/site
+./scripts/build-site.sh
+python3 -m http.server 8080 --directory /home/dev/projects/thenie_v2/dist
 ```
 
-Then open <http://localhost:8080>.
+Then open <http://localhost:8080>. Serve `site/` instead to see the pristine
+mockup without our additions.
 
 ## Deploying
 

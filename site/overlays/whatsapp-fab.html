@@ -1,0 +1,83 @@
+<!-- ─────────────────────────────────────────────────────────────────────────
+     Floating WhatsApp button (overlay — NOT part of the captured mirror).
+     Injected before the closing body tag by scripts/build-site.sh. See docs/14-whatsapp-fab.md.
+     ───────────────────────────────────────────────────────────────────────── -->
+<style>
+  .wa-fab{
+    position:fixed;
+    right:16px;
+    /* The cart bar (.cart-bar, ~97px tall) is pinned to the bottom, so the
+       button sits above it rather than on top of the checkout button. */
+    bottom:calc(110px + env(safe-area-inset-bottom));
+    width:72px;height:72px;
+    border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    background:#25d366;
+    color:#fff;
+    text-decoration:none;
+    box-shadow:0 8px 22px rgba(37,211,102,0.42), 0 2px 6px rgba(0,0,0,0.18);
+    /* Above .cart-bar (50), below .modal-overlay (100) so the checkout sheet
+       still covers it. */
+    z-index:60;
+    -webkit-tap-highlight-color:transparent;
+    transition:transform .16s ease, box-shadow .16s ease;
+  }
+  .wa-fab:hover,
+  .wa-fab:focus-visible{
+    transform:scale(1.06);
+    box-shadow:0 10px 26px rgba(37,211,102,0.52), 0 3px 8px rgba(0,0,0,0.22);
+  }
+  .wa-fab:active{transform:scale(0.96);}
+  .wa-fab:focus-visible{outline:3px solid var(--maroon,#7a1f2b);outline-offset:3px;}
+  .wa-fab svg{width:40px;height:40px;display:block;fill:currentColor;}
+
+  /* Soft pulse so it reads as "tap me" without being loud. */
+  .wa-fab::before{
+    content:"";
+    position:absolute;inset:0;
+    border-radius:50%;
+    background:#25d366;
+    opacity:.45;
+    animation:wa-fab-pulse 2.4s ease-out infinite;
+    z-index:-1;
+  }
+  @keyframes wa-fab-pulse{
+    0%{transform:scale(1);opacity:.45;}
+    70%{transform:scale(1.5);opacity:0;}
+    100%{transform:scale(1.5);opacity:0;}
+  }
+
+  /* "Chat Admin" pill — room for it on wider screens only. */
+  .wa-fab-label{
+    position:absolute;
+    right:calc(100% + 10px);
+    white-space:nowrap;
+    background:var(--white,#fff);
+    color:var(--maroon-dark,#5c1620);
+    font-family:'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-size:13px;font-weight:700;
+    padding:8px 12px;
+    border-radius:999px;
+    box-shadow:0 4px 14px rgba(90,40,20,0.18);
+    display:none;
+  }
+  @media (min-width:560px){
+    .wa-fab{width:80px;height:80px;right:24px;}
+    .wa-fab svg{width:44px;height:44px;}
+    .wa-fab-label{display:block;}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .wa-fab,.wa-fab::before{transition:none;animation:none;}
+  }
+</style>
+
+<a class="wa-fab"
+   href="https://wa.me/62818100523?text=Halo%20Thenie%20Healthy%20Catering%2C%20saya%20mau%20tanya-tanya%20soal%20menu%20%26%20order%20%F0%9F%99%8F"
+   target="_blank" rel="noopener"
+   aria-label="Chat admin Thenie Healthy Catering di WhatsApp"
+   title="Chat admin di WhatsApp">
+  <span class="wa-fab-label" aria-hidden="true">Chat Admin</span>
+  <svg viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false">
+    <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2Zm0 18.15h-.01a8.23 8.23 0 0 1-4.19-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.2 8.2 0 0 1-1.26-4.38c0-4.54 3.7-8.23 8.25-8.23a8.2 8.2 0 0 1 5.83 2.42 8.18 8.18 0 0 1 2.41 5.82c0 4.54-3.7 8.23-8.24 8.23Zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.13-.16.24-.64.8-.79.97-.14.16-.29.19-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.01-.38.11-.5.11-.11.25-.29.37-.43.13-.15.17-.25.25-.41.08-.17.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.41-.42-.56-.43h-.48c-.17 0-.43.06-.66.31-.23.25-.86.85-.86 2.07 0 1.22.89 2.4 1.01 2.56.12.17 1.75 2.67 4.23 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.08.14-1.18-.06-.11-.22-.17-.47-.29Z"/>
+  </svg>
+</a>
