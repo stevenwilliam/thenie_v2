@@ -66,18 +66,32 @@ guessed at.
 |------|--------|------|
 | Runbook written | ✅ | Parts 1–13 + Appendices A–C, absolute paths, `vi` |
 | Matches the SCHOOL_CATERING server model | ✅ | Same Ubuntu + Nginx front door, added as one more subdomain |
-| **Deployed to the server** | ⬜ | **Not run — needs your server.** See below. |
-| Nginx config syntax-checked on the server | ⬜ | Needs `nginx -t` there |
+| Nginx config passes `nginx -t` | ✅ | Run locally against nginx 1.28.3 — `test is successful`, no warnings |
+| Config actually serves the real file | ✅ | Served the 4.6 MB mirror; response hash equals the capture |
+| All five response headers verified | ✅ | `Cache-Control`, `X-Robots-Tag`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` |
+| `try_files` fallback verified | ✅ | `/anything` → HTTP 200 |
+| Appendix B (port-only) config valid | ✅ | `nginx -t` clean |
+| **Deployed to your server** | ⬜ | **Not run — needs your machine and DNS.** |
 | TLS issued | ⬜ | Needs DNS first |
+
+**Two real bugs were found by testing the config rather than trusting it:**
+
+1. `gzip_types text/html …` raised `[warn] duplicate MIME type "text/html"` —
+   nginx always gzips HTML. Removed.
+2. Far worse: `Cache-Control` was set inside `location = /index.html`. nginx
+   **replaces** rather than merges `add_header` sets, so that one directive
+   silently dropped **all four security headers** — with a config that passed
+   `nginx -t` and served the page perfectly. Every header now lives at server
+   level, and the response was re-checked to prove it.
 
 ## 6. Not verified — honest list
 
 These are written but **not executed**, because this environment has no access
 to the target server or a browser:
 
-1. **Nothing is deployed.** The runbook has never been run. Nginx is not
-   installed here, so `nginx -t` has not validated the config — it is written to
-   the same pattern as your working SCHOOL_CATERING config, but it is unproven.
+1. **Nothing is deployed to your server.** The Nginx config itself is now
+   proven — validated and used to serve the real file locally — but Parts 1, 7
+   and 8 (DNS, certbot, HTTPS) need your machine and cannot be rehearsed here.
 2. **Rendered headlessly, not on a real device.** Four screenshots were taken
    and inspected, and they corrected the docs in five places. But headless
    Chromium is not an iPhone — the page uses a system font stack, so type will

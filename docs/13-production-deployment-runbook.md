@@ -251,12 +251,34 @@ server {
     root /var/www/thenie;
     index index.html;
 
-    # The page is one 4.6 MB HTML file that is replaced wholesale on each
-    # deploy, so it must never be cached hard — otherwise visitors keep an old
-    # copy after an update. This matches what Netlify serves upstream.
-    location = /index.html {
-        add_header Cache-Control "public, max-age=0, must-revalidate" always;
-    }
+    # ---- Headers ----
+    # ALL add_header directives live here at server level, and NO location
+    # block below declares one. That is deliberate: nginx does not merge
+    # add_header directives, it REPLACES them. The moment any location declares
+    # a single add_header, every header inherited from the server block is
+    # dropped for requests hitting that location -- silently, with a perfectly
+    # valid config and no warning from `nginx -t`.
+    #
+    # This is not theoretical. An earlier draft of this runbook set
+    # Cache-Control inside `location = /index.html`. It passed `nginx -t`,
+    # served the file correctly, and returned the cache header with all four
+    # security headers missing. It was caught by actually reading the response.
+    #
+    # If you ever add an add_header inside a location, repeat all five here.
+
+    # The page is one 4.6 MB HTML file replaced wholesale on each deploy, so it
+    # must never be cached hard -- otherwise visitors keep an old copy after an
+    # update. This matches what Netlify serves upstream.
+    add_header Cache-Control "public, max-age=0, must-revalidate" always;
+
+    # This is a mockup. Keep it out of Google so it cannot be confused with, or
+    # outrank, the real site. Remove this line when it goes properly live.
+    add_header X-Robots-Tag "noindex, nofollow" always;
+
+    # Baseline security headers. No framing, no MIME sniffing, no referrer leak.
+    add_header X-Frame-Options        "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy        "strict-origin-when-cross-origin" always;
 
     # Everything resolves to the single page. There are no other files and no
     # client-side routes, but this keeps a stray path from returning a bare 404.
@@ -264,21 +286,15 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
-    # This is a mockup. Keep it out of Google so it cannot be confused with, or
-    # outrank, the real site. Remove this block when it goes properly live.
-    add_header X-Robots-Tag "noindex, nofollow" always;
-
-    # Baseline security headers. No frames, no MIME sniffing, no referrer leak.
-    add_header X-Frame-Options            "SAMEORIGIN" always;
-    add_header X-Content-Type-Options     "nosniff" always;
-    add_header Referrer-Policy            "strict-origin-when-cross-origin" always;
-
     # Compression. The inline CSS/JS/markup compresses well; the base64 JPEGs
-    # are already compressed and will barely shrink, so expect roughly 4.6 MB
-    # to become roughly 4.4 MB. This is a limit of the mirrored file, not of
-    # the server -- see docs/08-technical-inventory.md.
+    # are already compressed and barely shrink, so expect roughly 4.6 MB to
+    # become roughly 4.4 MB. That is a limit of the mirrored file, not of the
+    # server -- see docs/08-technical-inventory.md.
+    #
+    # Do NOT list text/html in gzip_types -- nginx always gzips it, and naming
+    # it again raises: [warn] duplicate MIME type "text/html".
     gzip             on;
-    gzip_types       text/html text/css application/javascript;
+    gzip_types       text/css application/javascript;
     gzip_min_length  1024;
     gzip_comp_level  6;
 
@@ -287,10 +303,12 @@ server {
 }
 ```
 
-> **Careful with `add_header`.** Nginx replaces the *whole* inherited set the
-> moment a block declares one of its own. Every header above is therefore
-> declared in this server block with `always`. If you later add headers inside a
-> `location`, you must repeat these there too.
+> **This config was tested, not just written.** It was checked with `nginx -t`
+> (clean), then used to actually serve the real 4.6 MB file while the response
+> headers and the served bytes were compared against the capture hash. The
+> `add_header` placement above is the *result* of that test — the first draft
+> looked right, passed `nginx -t`, served the file fine, and silently dropped
+> every security header. See [[PROGRESS]].
 
 ---
 
