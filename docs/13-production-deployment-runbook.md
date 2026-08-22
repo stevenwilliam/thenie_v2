@@ -699,6 +699,11 @@ exists across the Cloudflare hop.
 The fix is to put a real certificate on the origin and set Cloudflare to
 **Full (strict)** so it connects over HTTPS end to end.
 
+**Which certificate does not matter** — a Cloudflare Origin Certificate (D1) and
+a Let's Encrypt certificate (D3b) both work. What matters is that the origin
+answers on 443 *and* that Cloudflare is switched off Flexible. Changing the
+certificate alone fixes nothing; changing the SSL mode alone breaks the site.
+
 ### Why not certbot here
 
 Cloudflare proxies port 80, so certbot's HTTP-01 challenge is intercepted by the
@@ -819,6 +824,62 @@ server {
     error_log  /var/log/nginx/thenie.error.log;
 }
 ```
+
+### D3b — Already have a Let's Encrypt certificate?
+
+You do not need the Origin Certificate. Any certificate the origin can present
+works — Cloudflare only has to be able to validate it. Swap the two cert lines
+in the D3 config for:
+
+```nginx
+ssl_certificate     /etc/letsencrypt/live/thenie.id/fullchain.pem;
+ssl_certificate_key /etc/letsencrypt/live/thenie.id/privkey.pem;
+```
+
+Check what you actually hold first — a certificate can exist while Nginx never
+references it, which is exactly the state this server was found in:
+
+```bash
+sudo certbot certificates
+sudo nginx -T 2>/dev/null | grep -nE "listen 443|ssl_certificate"
+```
+
+> **Renewal breaks while Cloudflare proxies — this is the catch.**
+> certbot's HTTP-01 challenge is answered by the Cloudflare edge, not your
+> origin, and **Always Use HTTPS** redirects it. So `certbot renew` fails, and
+> under **Full (strict)** an expired origin certificate takes the site down
+> roughly 60 days later, with nothing having changed that day to explain it.
+>
+> Prove it now rather than discovering it then:
+>
+> ```bash
+> sudo certbot renew --dry-run
+> ```
+>
+> If it fails, pick one:
+>
+> 1. **DNS-01 with the Cloudflare plugin** — renews automatically while
+>    proxied, and is the right answer if you want to stay on Let's Encrypt:
+>
+>    ```bash
+>    sudo apt -y install python3-certbot-dns-cloudflare
+>    sudo mkdir -p /etc/letsencrypt/secrets
+>    sudo vi /etc/letsencrypt/secrets/cloudflare.ini   # dns_cloudflare_api_token = <token>
+>    sudo chmod 600 /etc/letsencrypt/secrets/cloudflare.ini
+>    sudo certbot certonly \
+>      --dns-cloudflare \
+>      --dns-cloudflare-credentials /etc/letsencrypt/secrets/cloudflare.ini \
+>      -d thenie.id -d www.thenie.id
+>    ```
+>
+>    Create the token in Cloudflare under **My Profile -> API Tokens**, with the
+>    **Zone -> DNS -> Edit** template scoped to `thenie.id` only.
+>
+> 2. **Use the Origin Certificate** (D1) and forget renewal for 15 years.
+> 3. **Grey-cloud the domain** for each renewal — works, but it is a manual
+>    chore every 60 days and easy to forget.
+>
+> Option 2 is the least work; option 1 is the most standard.
 
 ### D4 — Enable, test, reload
 
