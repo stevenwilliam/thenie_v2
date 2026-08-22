@@ -1,5 +1,10 @@
 # 13 — Production Deployment Runbook — Static Site on the Existing Nginx
 
+> **Already deployed once and just want to push a change live?**
+> Skip to [Deploying an update](#deploying-an-update--the-everyday-path) —
+> push here, then `git pull` + `./scripts/build-site.sh` + `cp` on the server.
+> Everything from Part 1 onwards is first-time setup.
+
 **Audience:** someone who has never deployed a server before.
 **Your setup:** the same Ubuntu machine described in the SCHOOL_CATERING runbook
 — **Nginx** is the only web server, it already serves your **PHP site** (via
@@ -62,6 +67,115 @@ There are **no passwords and no secrets** in this deployment.
 
 > **Not sure about the subdomain?** See Q-14 in [[09-open-questions]]. Anything
 > works — just replace `thenie.id` consistently everywhere below.
+
+---
+
+## Deploying an update — the everyday path
+
+**Already set the server up once?** This is the whole job. Everything below
+Part 1 is first-time setup you do not repeat.
+
+The server keeps its own clone of the repository at `/opt/thenie_v2`. You commit
+and push from your machine; the server pulls, rebuilds, and copies the result
+into the web root. Nothing else moves.
+
+```
+your machine ──git push──▶ GitHub ──git pull──▶ /opt/thenie_v2  (the clone)
+                                                     │
+                                                     │ ./scripts/build-site.sh
+                                                     ▼
+                                                 dist/index.html
+                                                     │ sudo cp
+                                                     ▼
+                                          /var/www/thenie/index.html  ──▶ Nginx
+```
+
+### On your own machine — push first
+
+Nothing reaches the server until it is on GitHub:
+
+```bash
+cd /home/dev/projects/thenie_v2
+git status          # anything unstaged is about to be left behind
+git add -A
+git commit -m "describe the change"
+git push origin main
+```
+
+### On the server — pull, build, publish
+
+Log in (`ssh -p 30022 appuser@172.236.152.44`), then:
+
+```bash
+# 1. keep the version that is currently live, so you can roll back
+sudo cp /var/www/thenie/index.html /var/www/thenie/index.html.bak
+
+# 2. pull and rebuild
+cd /opt/thenie_v2
+git pull
+./scripts/build-site.sh
+
+# 3. publish
+sudo cp /opt/thenie_v2/dist/index.html /var/www/thenie/index.html
+sudo chown www-data:www-data /var/www/thenie/index.html
+sudo chmod 644 /var/www/thenie/index.html
+
+# 4. check
+grep -c 'class="wa-fab"' /var/www/thenie/index.html   # 1 = WhatsApp button is live
+sha256sum /var/www/thenie/index.html                  # same hash build-site.sh printed
+```
+
+Then reload the site in a browser. **No `nginx reload`, no restart** — Nginx
+reads the file off the disk on every request, and the `must-revalidate` header
+means returning visitors pick up the new file immediately.
+
+### The three things that go wrong
+
+**You skipped `./scripts/build-site.sh`.** This is the big one. `dist/` is
+git-ignored, so `git pull` brings the mirror and the overlays but *never* the
+built file. Skip the build and you copy a stale `dist/index.html` — or none at
+all — with no error anywhere. The site simply does not change, and it looks like
+the pull failed. It did not; the build did not run.
+
+**`git pull` refuses: "Your local changes would be overwritten".** Someone
+edited the checkout on the server. Nothing in `/opt/thenie_v2` is meant to be
+authored there — the fix is to throw the edits away:
+
+```bash
+cd /opt/thenie_v2
+git checkout -- .
+git pull
+```
+
+If you want to see what you are discarding first, `git diff` before the
+`checkout`.
+
+**`build-site.sh` refuses: "site/index.html no longer matches the recorded
+capture hash".** The mirror has been modified — see the rule in `README.md`. The
+build deliberately stops rather than ship a silently altered capture:
+
+```bash
+cd /opt/thenie_v2
+git checkout -- site/index.html
+./scripts/build-site.sh
+```
+
+### Rolling back
+
+```bash
+sudo cp /var/www/thenie/index.html.bak /var/www/thenie/index.html
+sudo chown www-data:www-data /var/www/thenie/index.html
+```
+
+That restores the previous file instantly. To go back further, check out an
+older commit in `/opt/thenie_v2` and rebuild — see [[14-whatsapp-fab]] for what
+the build is actually doing.
+
+### If the server has no clone yet
+
+Then this is your first deploy: do **Part 4 → Option A**, which creates
+`/opt/thenie_v2` with a read-only deploy key. After that, this page is all you
+need.
 
 ---
 
@@ -502,16 +616,21 @@ curl -sI -H "Accept-Encoding: gzip" https://thenie.id | grep -i content-encoding
 
 Expect `content-encoding: gzip`.
 
-Confirm the served bytes are the real thing — decompressed, this must be the
-capture hash again:
+Confirm the served bytes are the real thing — decompressed, this must equal the
+hash of the file you published:
 
 ```bash
 curl -s --compressed https://thenie.id | sha256sum
+sha256sum /var/www/thenie/index.html      # must be identical
 ```
 
-```
-9d4cfefba381b6a8c3adbc822281e701c7b8cca98d1e7d40b5ac1ccafbb0df49
-```
+If the two differ, something between Nginx and the disk is rewriting the page.
+
+The served hash is **not** the capture hash any more: what ships is the mirror
+plus the overlays in `site/overlays/` ([[14-whatsapp-fab]]), so it changes
+whenever an overlay does. `9d4cfefba381b6a8c3adbc822281e701c7b8cca98d1e7d40b5ac1ccafbb0df49`
+is the hash of `site/index.html` alone — the untouched capture — and that one
+never changes.
 
 **Now confirm you broke nothing.** Open your existing PHP site in a browser, and:
 
@@ -530,7 +649,10 @@ press send in WhatsApp** unless you want the business to receive a test order.
 
 ## Part 9 — Updating to a new version
 
-If you used **Option A**:
+This is the same procedure as [Deploying an update](#deploying-an-update--the-everyday-path)
+near the top of the page, repeated here so Part 9 is not a dead end.
+
+If you used **Option A** (the server has its own clone — the normal case):
 
 ```bash
 # 1. keep the current version, so Part 10 can roll back to it
@@ -610,8 +732,15 @@ sudo systemctl reload nginx
 # certificate expiry
 sudo certbot certificates
 
-# confirm the served file is still the exact capture
+# confirm the served page matches what is on disk
 curl -s --compressed https://thenie.id | sha256sum
+sha256sum /var/www/thenie/index.html
+
+# confirm the WhatsApp button is live
+curl -s --compressed https://thenie.id | grep -c 'class="wa-fab"'   # 1
+
+# confirm the mirror in the clone is still the untouched capture
+cd /opt/thenie_v2 && ./scripts/verify-mirror.sh
 ```
 
 ---
@@ -625,9 +754,13 @@ curl -s --compressed https://thenie.id | sha256sum
 | **403 Forbidden** | Permissions | `sudo chown -R www-data:www-data /var/www/thenie && sudo chmod 644 /var/www/thenie/index.html` |
 | Certbot fails | DNS not resolving yet | `nslookup thenie.id` must return `172.236.152.44`; wait and retry. |
 | Serves the **wrong site** | Another server block claims the name, or this one is unreachable | `sudo nginx -T \| grep -n "server_name"` |
-| Page loads but photos missing | Truncated file | Compare `sha256sum` against Part 4. Re-copy. |
+| Page loads but photos missing | Truncated file | Compare `sha256sum` against `dist/index.html`. Re-copy. |
 | Very slow first load | The 4.6 MB payload | Expected. See Q-15 in [[09-open-questions]]. |
 | Old version still showing | Browser cache | Hard-refresh (Ctrl-Shift-R). Confirm `cache-control` in Part 8. |
+| Pulled, but the site did not change | `./scripts/build-site.sh` was skipped, or `dist/index.html` was never copied to the web root | Re-run *Deploying an update* in full. `dist/` is git-ignored — the pull alone cannot change the served file. |
+| No WhatsApp button after deploying | Published `site/index.html` instead of `dist/index.html` | `grep -c 'class="wa-fab"' /var/www/thenie/index.html` — if `0`, copy from `dist/`. |
+| `git pull`: *local changes would be overwritten* | The server checkout was edited | `cd /opt/thenie_v2 && git checkout -- . && git pull` |
+| `build-site.sh`: *no longer matches the recorded capture hash* | `site/index.html` was modified | `cd /opt/thenie_v2 && git checkout -- site/index.html` |
 | Existing PHP site broke | You edited its config | `sudo nginx -T` and compare. This runbook never touches it. |
 | **ERR_TOO_MANY_REDIRECTS** | A proxy or registrar is redirecting back at you | See the dedicated section below — do not start by editing Nginx. |
 
@@ -956,9 +1089,11 @@ Both must end in a single `200`, with `www` passing through exactly one `301` to
 
 ```bash
 curl -s https://thenie.id | sha256sum
+sha256sum /var/www/thenie/index.html
 ```
 
-Must print `9d4cfefba381b6a8c3adbc822281e701c7b8cca98d1e7d40b5ac1ccafbb0df49`.
+Both must print the same hash — the one `build-site.sh` reported when you
+published. (Not the capture hash; see Part 8.)
 
 ### D7 — Optional hardening
 
