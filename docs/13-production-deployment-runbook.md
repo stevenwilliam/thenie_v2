@@ -70,7 +70,7 @@ In your registrar's DNS panel, add **one A record**:
 
 | Type | Name | Value |
 |------|------|-------|
-| A | `thenie` | `SERVER_IP` |
+| A | `thenie` | `172.236.152.44` |
 
 If you use **Cloudflare**, either grey cloud (DNS only) or orange cloud
 (Proxied) is fine here — this is a plain static file with no presigned uploads,
@@ -82,7 +82,7 @@ Wait a few minutes, then verify **from your own computer**:
 nslookup thenie.sunshinefood.co.id
 ```
 
-It must print `SERVER_IP`. **Do not continue until it does** — certbot cannot
+It must print `172.236.152.44`. **Do not continue until it does** — certbot cannot
 issue a certificate otherwise.
 
 ---
@@ -187,7 +187,7 @@ Test, then clone:
 ```bash
 ssh -T git@github-thenie
 sudo mkdir -p /opt/thenie_v2
-sudo chown SSH_USER:SSH_USER /opt/thenie_v2
+sudo chown appuser:appuser /opt/thenie_v2
 git clone github-thenie:stevenwilliam/thenie_v2.git /opt/thenie_v2
 ```
 
@@ -530,7 +530,7 @@ curl -s --compressed https://thenie.sunshinefood.co.id | sha256sum
 | `nginx -t` fails | Typo in the config | Read the line number it prints; fix; re-test. Never reload on a failed test. |
 | **404 Not Found** | File missing or wrong root | `ls -la /var/www/thenie/index.html` |
 | **403 Forbidden** | Permissions | `sudo chown -R www-data:www-data /var/www/thenie && sudo chmod 644 /var/www/thenie/index.html` |
-| Certbot fails | DNS not resolving yet | `nslookup thenie.sunshinefood.co.id` must return `SERVER_IP`; wait and retry. |
+| Certbot fails | DNS not resolving yet | `nslookup thenie.sunshinefood.co.id` must return `172.236.152.44`; wait and retry. |
 | Serves the **wrong site** | Another server block claims the name, or this one is unreachable | `sudo nginx -T \| grep -n "server_name"` |
 | Page loads but photos missing | Truncated file | Compare `sha256sum` against Part 4. Re-copy. |
 | Very slow first load | The 4.6 MB payload | Expected. See Q-15 in [[09-open-questions]]. |
@@ -624,7 +624,7 @@ sudo certbot --apache -d thenie.sunshinefood.co.id
 ## Appendix B — No domain yet? Serve it on a port
 
 To look at it before DNS is ready, serve it on port **8095** and reach it at
-`http://SERVER_IP:8095`.
+`http://172.236.152.44:8095`.
 
 ```nginx
 server {
