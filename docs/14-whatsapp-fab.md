@@ -28,7 +28,7 @@ down.
 the bottom-right of every screen. Tapping it opens
 
 ```
-https://wa.me/62818100523?text=Halo Thenie Healthy Catering, saya mau tanya-tanya soal menu & order 🙏
+https://wa.me/62818100523?text=Halo Thenie Healthy Catering, saya mau tanya-tanya soal menu & order
 ```
 
 in a new tab — the same number the checkout flow already sends orders to
