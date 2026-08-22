@@ -31,7 +31,8 @@ Internet ──443──▶  Nginx (your existing front door)
                        ├──▶  api.sunshinefood.co.id    school catering API      (untouched)
                        ├──▶  cdn.sunshinefood.co.id    school catering storage  (untouched)
                        │
-                       └──▶  thenie.sunshinefood.co.id  ◀── WE ADD THIS
+                       ├──▶  thenie.id      ◀── WE ADD THIS (the site)
+                       └──▶  www.thenie.id  ◀── WE ADD THIS (301 → thenie.id)
                                      │
                                      └── /var/www/thenie/index.html   (one 4.6 MB file)
 ```
@@ -51,26 +52,36 @@ expired".
 
 | Placeholder | What it is | Example |
 |-------------|-----------|---------|
-| `thenie.sunshinefood.co.id` | the subdomain to serve on | *(suggested — change everywhere below if you use another)* |
+| `thenie.id` | the subdomain to serve on | *(suggested — change everywhere below if you use another)* |
 | `SERVER_IP` | your machine's public IP | `172.236.152.44` |
 | `SSH_USER` | the user you log into the server as | `appuser` |
 | `SSH_PORT` | the SSH port — **this machine uses 30022, not 22** | `30022` |
-| `you@sunshinefood.co.id` | email for the TLS certificate expiry warnings | — |
+| `steven.william.anna@gmail.com` | email for the TLS certificate expiry warnings | — |
 
 There are **no passwords and no secrets** in this deployment.
 
 > **Not sure about the subdomain?** See Q-14 in [[09-open-questions]]. Anything
-> works — just replace `thenie.sunshinefood.co.id` consistently everywhere below.
+> works — just replace `thenie.id` consistently everywhere below.
 
 ---
 
-## Part 1 — Point the subdomain at the machine (DNS)
+## Part 1 — Point the domain at the machine (DNS)
 
-In your registrar's DNS panel, add **one A record**:
+`thenie.id` is an **apex** (root) domain, not a subdomain, so this differs from
+the school-catering setup. In your registrar's DNS panel, add **two A records**:
 
 | Type | Name | Value |
 |------|------|-------|
-| A | `thenie` | `172.236.152.44` |
+| A | `@` *(or blank, or `thenie.id` — registrars label the apex differently)* | `172.236.152.44` |
+| A | `www` | `172.236.152.44` |
+
+> **Do not use a CNAME for the apex.** The DNS standard does not allow a CNAME
+> at the root of a domain. If your registrar offers ALIAS or ANAME, that works;
+> a plain **A record** always does.
+>
+> **Using Cloudflare?** Either grey or orange cloud is fine — this is a plain
+> static file with no presigned uploads, so the constraint that forces `cdn.` to
+> stay unproxied does not apply here.
 
 If you use **Cloudflare**, either grey cloud (DNS only) or orange cloud
 (Proxied) is fine here — this is a plain static file with no presigned uploads,
@@ -79,11 +90,12 @@ so the problem that forces `cdn.` to be unproxied does not apply.
 Wait a few minutes, then verify **from your own computer**:
 
 ```bash
-nslookup thenie.sunshinefood.co.id
+nslookup thenie.id
+nslookup www.thenie.id
 ```
 
-It must print `172.236.152.44`. **Do not continue until it does** — certbot cannot
-issue a certificate otherwise.
+**Both** must print `172.236.152.44`. Do not continue until they do — certbot
+cannot issue a certificate otherwise.
 
 ---
 
@@ -277,10 +289,19 @@ sudo vi /etc/nginx/sites-available/thenie
 Paste this exactly:
 
 ```nginx
+# Send www to the bare domain, so the site has exactly one canonical address
+# and does not compete with itself in search results.
 server {
     listen 80;
     listen [::]:80;
-    server_name thenie.sunshinefood.co.id;
+    server_name www.thenie.id;
+    return 301 http://thenie.id$request_uri;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name thenie.id;
 
     root /var/www/thenie;
     index index.html;
@@ -305,8 +326,18 @@ server {
     # update. This matches what Netlify serves upstream.
     add_header Cache-Control "public, max-age=0, must-revalidate" always;
 
-    # This is a mockup. Keep it out of Google so it cannot be confused with, or
-    # outrank, the real site. Remove this line when it goes properly live.
+    # >>> READ THIS BEFORE YOU GO LIVE <<<
+    # thenie.id is the real business domain, so this line is a DECISION, not a
+    # default. While it is present, Google will not index the site at all.
+    #
+    #   Keep it   while thenie.id is still a preview you are showing people.
+    #   DELETE it the day this becomes the public site -- otherwise the business
+    #             is invisible in search, and nobody will know why.
+    #
+    # Deleting it is not enough on its own: the page ships no meta description,
+    # no Open Graph tags and no <h1> (see docs/08-technical-inventory.md), so it
+    # will index thinly and share as a bare link. See Q-13 in
+    # docs/09-open-questions.md.
     add_header X-Robots-Tag "noindex, nofollow" always;
 
     # Baseline security headers. No framing, no MIME sniffing, no referrer leak.
@@ -366,7 +397,7 @@ school catering subdomains keep serving throughout.
 Confirm it answers over plain HTTP before adding TLS:
 
 ```bash
-curl -sI http://thenie.sunshinefood.co.id | head -5
+curl -sI http://thenie.id | head -5
 ```
 
 Expect `HTTP/1.1 200 OK` and `Content-Type: text/html`.
@@ -385,7 +416,7 @@ sudo apt -y install certbot python3-certbot-nginx
 Issue the certificate:
 
 ```bash
-sudo certbot --nginx -d thenie.sunshinefood.co.id --email you@sunshinefood.co.id --agree-tos --no-eff-email
+sudo certbot --nginx -d thenie.id -d www.thenie.id --email steven.william.anna@gmail.com --agree-tos --no-eff-email
 ```
 
 When certbot asks about redirecting HTTP→HTTPS, choose **yes (redirect)**.
@@ -407,7 +438,7 @@ The dry run must end with `Congratulations, all simulated renewals succeeded`.
 ## Part 8 — Confirm everything
 
 ```bash
-curl -sI https://thenie.sunshinefood.co.id | head -12
+curl -sI https://thenie.id | head -12
 ```
 
 Check for:
@@ -421,7 +452,7 @@ Check for:
 Confirm compression is applied:
 
 ```bash
-curl -sI -H "Accept-Encoding: gzip" https://thenie.sunshinefood.co.id | grep -i content-encoding
+curl -sI -H "Accept-Encoding: gzip" https://thenie.id | grep -i content-encoding
 ```
 
 Expect `content-encoding: gzip`.
@@ -430,7 +461,7 @@ Confirm the served bytes are the real thing — decompressed, this must be the
 capture hash again:
 
 ```bash
-curl -s --compressed https://thenie.sunshinefood.co.id | sha256sum
+curl -s --compressed https://thenie.id | sha256sum
 ```
 
 ```
@@ -444,7 +475,7 @@ curl -sI https://meals.sunshinefood.co.id | head -3
 curl -s  https://api.sunshinefood.co.id/health
 ```
 
-Finally, open **https://thenie.sunshinefood.co.id** on a real phone. It is a
+Finally, open **https://thenie.id** on a real phone. It is a
 mobile-first page (see [[06-design-system]]) and the phone is where it is meant
 to be judged. Walk one order end to end: pick a meal, pick dates, add it, open
 the cart, press send — WhatsApp should open with the order pre-filled. **Do not
@@ -518,7 +549,7 @@ sudo systemctl reload nginx
 sudo certbot certificates
 
 # confirm the served file is still the exact capture
-curl -s --compressed https://thenie.sunshinefood.co.id | sha256sum
+curl -s --compressed https://thenie.id | sha256sum
 ```
 
 ---
@@ -530,7 +561,7 @@ curl -s --compressed https://thenie.sunshinefood.co.id | sha256sum
 | `nginx -t` fails | Typo in the config | Read the line number it prints; fix; re-test. Never reload on a failed test. |
 | **404 Not Found** | File missing or wrong root | `ls -la /var/www/thenie/index.html` |
 | **403 Forbidden** | Permissions | `sudo chown -R www-data:www-data /var/www/thenie && sudo chmod 644 /var/www/thenie/index.html` |
-| Certbot fails | DNS not resolving yet | `nslookup thenie.sunshinefood.co.id` must return `172.236.152.44`; wait and retry. |
+| Certbot fails | DNS not resolving yet | `nslookup thenie.id` must return `172.236.152.44`; wait and retry. |
 | Serves the **wrong site** | Another server block claims the name, or this one is unreachable | `sudo nginx -T \| grep -n "server_name"` |
 | Page loads but photos missing | Truncated file | Compare `sha256sum` against Part 4. Re-copy. |
 | Very slow first load | The 4.6 MB payload | Expected. See Q-15 in [[09-open-questions]]. |
@@ -547,8 +578,12 @@ types stays in their browser and goes to WhatsApp (see [[08-technical-inventory]
 
 Still worth knowing:
 
-- **The `noindex` header is deliberate.** A mockup competing with the real
-  business in search results is a genuine risk. Remove it only on purpose.
+- **The `noindex` header is now the single most consequential line in the
+  config.** On a staging subdomain it was free insurance. On `thenie.id` it
+  suppresses the real business in search. Decide it deliberately, and if you
+  remove it, read Q-13 first — the page has no SEO baseline to index.
+- **Bank details are on a public page at a memorable domain.** That was already
+  true on Netlify, but a real domain gets found. See Q-17.
 - **There is no access control.** Anyone with the URL sees it. If it should be
   private, add HTTP basic auth:
 
@@ -587,7 +622,7 @@ sudo vi /etc/apache2/sites-available/thenie.conf
 
 ```apache
 <VirtualHost *:80>
-    ServerName thenie.sunshinefood.co.id
+    ServerName thenie.id
     DocumentRoot /var/www/thenie
 
     <Directory /var/www/thenie>
@@ -616,7 +651,7 @@ sudo a2enmod headers deflate
 sudo a2ensite thenie
 sudo apache2ctl configtest
 sudo systemctl reload apache2
-sudo certbot --apache -d thenie.sunshinefood.co.id
+sudo certbot --apache -d thenie.id
 ```
 
 ---

@@ -69,9 +69,11 @@ guessed at.
 | Nginx config passes `nginx -t` | ✅ | Run locally against nginx 1.28.3 — `test is successful`, no warnings |
 | Config actually serves the real file | ✅ | Served the 4.6 MB mirror; response hash equals the capture |
 | All five response headers verified | ✅ | `Cache-Control`, `X-Robots-Tag`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` |
+| Retargeted to `thenie.id` (apex) | ✅ | Two A records, `www` → 301 → apex; re-validated after the change |
+| `www` redirect verified | ✅ | `Host: www.thenie.id` → `301`, `Location: http://thenie.id/` |
 | `try_files` fallback verified | ✅ | `/anything` → HTTP 200 |
 | Appendix B (port-only) config valid | ✅ | `nginx -t` clean |
-| **Deployed to your server** | ⬜ | **Not run — needs your machine and DNS.** |
+| **Deployed to your server** | ⬜ | **In progress — you are at Part 4/5 on `172.236.152.44`.** |
 | TLS issued | ⬜ | Needs DNS first |
 
 **Two real bugs were found by testing the config rather than trusting it:**
@@ -105,7 +107,7 @@ to the target server or a browser:
 
 ## 7. Next steps
 
-- Decide the subdomain — Q-14 suggests `thenie.sunshinefood.co.id`
+- ~~Decide the domain~~ — **answered: `thenie.id`** (apex, with `www` → 301)
 - Run the runbook
 - Answer the 19 questions in [[09-open-questions]]
 - Decide Q-16: is `thenie_v2` a rebuild, with `site/` frozen as the v1 reference?

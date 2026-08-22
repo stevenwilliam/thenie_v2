@@ -83,16 +83,25 @@ Only weeks 34 and 35 of 2026 are present, hard-coded.
 
 ## Technical questions
 
-### Q-13 — Should the mockup be indexed by search engines?
-It has no SEO baseline at all (see [[08-technical-inventory]]).
-**Proposed default:** **`noindex`** while it is a mockup on a staging
-subdomain, so it cannot outrank or be confused with the real site. The runbook
-ships `noindex` by default for exactly this reason.
+### Q-13 — Should the site be indexed by search engines?
+**Sharpened by Q-14.** On `thenie.id` this is no longer a safe default either
+way. `noindex` makes the real business invisible in search; removing it
+publishes a page with **no meta description, no Open Graph tags, no `<h1>` and
+no JSON-LD** (see [[08-technical-inventory]]), which will index thinly and
+share as a bare link with no title card.
+**Proposed default:** keep `noindex` while `thenie.id` is a preview, and before
+removing it, add the SEO baseline. That baseline cannot go into `site/` without
+breaking the exact-mirror rule ([[07-fidelity-and-verification]]), so it is
+properly a v2 task — see Q-16.
 
-### Q-14 — Which subdomain should it live on?
-Not specified in the brief.
-**Proposed default:** `thenie.sunshinefood.co.id` on the existing server, so it
-sits alongside `meals.` / `api.` / `cdn.` without touching them.
+### Q-14 — Which domain should it live on? — **ANSWERED 2026-08-22**
+**`thenie.id`** — its own apex domain, not a subdomain of `sunshinefood.co.id`.
+`www.thenie.id` 301-redirects to the bare domain so the site has one canonical
+address. The runbook reflects this.
+
+This changes the nature of the deployment: it is no longer a mockup parked on a
+staging subdomain, it is the business's real address. Q-13, Q-17 and Q-19 all
+get sharper as a result.
 
 ### Q-15 — Should the 4.6 MB payload be optimised?
 Extracting the 13 images to cacheable files would cut repeat visits enormously —
