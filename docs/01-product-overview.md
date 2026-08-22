@@ -11,6 +11,24 @@ the business **over WhatsApp**.
 The interface language is **Indonesian** (`<html lang="id">`). There is no
 language switcher and no English variant.
 
+## Brand and trust signals
+
+| Element | Value |
+|---------|-------|
+| **Name** | Thenie Healthy Catering |
+| **Tagline** | *"Makan sehat, hidup lebih kuat."* |
+| **Logo** | Circular maroon badge reading **Thenie · Food & Coffee · Restaurant** (artwork only — the words exist in the image, not in the markup) |
+| **Halal** | **Bersertifikat Halal** — registered with Halal Indonesia (**BPJPH**), certificate **ID36210079132750826**, displayed prominently at the top of Home |
+| **Dietary claim** | No coconut milk, nothing deep-fried, no flour, minimal oil |
+| **Contact** | WhatsApp **0818-100-523** (`+62 818 100 523`) |
+
+The header repeats the served areas as a strapline: *Order online →
+konfirmasi via WhatsApp • Gading Serpong · Karawaci · Alam Sutera · BSD ·
+Melati Mas · Park Serpong.*
+
+The Halal certificate is the first content block on the page, above even *Cara
+Order* — a deliberate trust-first ordering for the Indonesian market.
+
 ## Who uses it
 
 | Actor | How they use it |
@@ -70,6 +88,14 @@ Park Serpong · Golden Stone · **Lainnya** (other)
 `Lainnya` is a free escape hatch — the page does not ask for a follow-up when
 it is chosen, and does not restrict or surcharge it. **(inferred: out-of-area
 handling is resolved by the admin over WhatsApp.)**
+
+## Service restrictions
+
+- **Healthy Meal and Bulking Extra do not serve Sundays** (BR-2.6). The other
+  six cards have no weekday restriction.
+- **Same-day ordering is closed** — the earliest date is tomorrow (BR-2.5).
+- **Catering Kantor starts at 5 pax per day** and includes **free fruit every
+  Friday** (BR-5.6, BR-5.7).
 
 ## What it deliberately does not do
 

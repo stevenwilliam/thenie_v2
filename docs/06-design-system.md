@@ -112,7 +112,7 @@ cream background. Pills use `border-radius: 999px`.
 | Class | Purpose |
 |-------|---------|
 | `.tab-btn` | Top-level tab pill; `.active` → green fill, white text |
-| `.subtab-btn` | Product-family pill inside Menu/Order |
+| `.subtab-btn` | Product-family pill inside Menu/Order; active → **maroon** fill, white text (top-level `.tab-btn` uses green — the two levels are colour-coded apart, confirmed by screenshot) |
 | `.panel` | Tab body; `.active` reveals it with a 0.2s fade |
 | `.card` | White surface, radius 16, warm shadow |
 | `.pref-chip` | Radio-as-chip (delivery windows); `.pref-disabled` when cut off |

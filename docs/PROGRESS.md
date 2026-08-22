@@ -29,6 +29,8 @@ _Last updated: 2026-08-22_
 | Extra paths probed | ✅ | `robots.txt`, `sitemap.xml`, `favicon.ico`, `manifest.json`, `_redirects` → all 404 upstream |
 | `scripts/verify-mirror.sh` | ✅ | Ran; passed local **and** upstream |
 | Serves correctly over HTTP | ✅ | Local `http.server` → 200, `Content-Length: 4615031`, hash matched |
+| **Rendered and visually inspected** | ✅ | Headless Chromium, 390px viewport — 4 screenshots in `docs/screenshots/` |
+| Catering Kantor prices confirmed from the render | ✅ | `order_kantor.png` matches the documented table |
 
 ## 3. Documentation
 
@@ -51,7 +53,14 @@ All content was read out of the mirror. Rules that were inferred are marked
 **(inferred)**; genuine gaps went to `09-open-questions.md` rather than being
 guessed at.
 
-## 4. Deployment
+## 4. Tests
+
+| Item | Status | Evidence |
+|------|--------|----------|
+| `analyze()` extracted verbatim from the mirror | ✅ | `tests/extract-analyze.js` |
+| Pricing-tier test suite (BR-3.1–3.12) | ✅ | `tests/pricing.test.js` — see run output in `tests/README.md` |
+
+## 5. Deployment
 
 | Item | Status | Note |
 |------|--------|------|
@@ -61,7 +70,7 @@ guessed at.
 | Nginx config syntax-checked on the server | ⬜ | Needs `nginx -t` there |
 | TLS issued | ⬜ | Needs DNS first |
 
-## Not verified — honest list
+## 6. Not verified — honest list
 
 These are written but **not executed**, because this environment has no access
 to the target server or a browser:
@@ -69,17 +78,18 @@ to the target server or a browser:
 1. **Nothing is deployed.** The runbook has never been run. Nginx is not
    installed here, so `nginx -t` has not validated the config — it is written to
    the same pattern as your working SCHOOL_CATERING config, but it is unproven.
-2. **No rendered screenshot.** The mirror is proven byte-identical, which is a
-   stronger guarantee than a visual diff, but no browser opened it here. Open it
-   on a phone once — it is a mobile-first page.
+2. **Rendered headlessly, not on a real device.** Four screenshots were taken
+   and inspected, and they corrected the docs in five places. But headless
+   Chromium is not an iPhone — the page uses a system font stack, so type will
+   differ. Worth one look on a real phone.
 3. **The WhatsApp handoff was never exercised.** Doing so would send a real
-   message to a real business number.
-4. **The pricing engine was read, not executed.** BR-3.1–3.12 were derived by
-   reading `analyze()`; no test suite exercises the boundaries. The BR-3.3 dead
-   zone (15–19 consecutive days pays full price) is the one most worth
-   confirming against the business — Q-7.
+   message to a real business number. Nothing was added to a cart either.
+4. **BR-3.3 is confirmed in code but not with the business.** The 15–19
+   consecutive-day dead zone (full price) is now proven by executing the real
+   `analyze()` against it — see `tests/`. Whether the business *intends* it is
+   still open (Q-7).
 
-## Next steps
+## 7. Next steps
 
 - Decide the subdomain — Q-14 suggests `thenie.sunshinefood.co.id`
 - Run the runbook

@@ -70,6 +70,13 @@ Nothing excludes them; the weekday-routine rules assume clean Mon–Fri weeks.
 **Proposed default:** maintain a holiday calendar, block those dates, and
 exclude them from the BR-3.11/3.12 gap checks.
 
+### Q-11b — The calorie figures contradict each other
+The HTML text gives Healthy Meal as **430–500 kcal**, and each day's line reads
+±450–485 kkal. The Menu-tab **poster image says 550–590 KKAL / PORSI**. One of
+the two is wrong, and the poster is the one customers actually look at.
+**Proposed default:** confirm the real figure with the kitchen and make the
+text authoritative, since it is the one a rebuild can keep in sync.
+
 ### Q-12 — Menu rotation beyond the two shown weeks
 Only weeks 34 and 35 of 2026 are present, hard-coded.
 **Proposed default:** treat the menu as data on a repeating cycle, not markup.

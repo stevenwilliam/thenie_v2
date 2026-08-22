@@ -77,6 +77,34 @@ Then update the hash in **three** places — `scripts/verify-mirror.sh`, this
 document, and `README.md` — commit the new capture on its own, and re-read the
 docs for drift.
 
+## Visual verification
+
+The mirror was also **rendered and looked at**, not just hashed. Headless
+Chromium (Playwright's cached build) served the file over a local HTTP server at
+a 390px-wide mobile viewport:
+
+| Screenshot | Shows |
+|------------|-------|
+| `screenshots/home.png` | Header, Halal certificate block, Cara Order, sticky cart bar |
+| `screenshots/menu.png` | Menu tab, weekly poster artwork for Minggu ke-35 |
+| `screenshots/order.png` | Order tab, Daily Order, the on-page tier explanation |
+| `screenshots/order_kantor.png` | Catering Kantor pricing matrix, live subtotal |
+
+**What rendering caught that reading the markup did not:** the tagline, the
+BPJPH Halal certificate, the Sunday restriction on Healthy/Bulking (BR-2.6), the
+free-fruit-Friday inclusion on Catering Kantor (BR-5.7), and the logo wordmark
+"Food & Coffee Restaurant" — which exists only inside the base64 artwork and is
+therefore invisible to any text search of the source.
+
+`order_kantor.png` independently confirms the Catering Kantor rate table in
+[[04-pricing-catalogue]] — Rp 24.000 / 23.000 / 22.000 / 21.000 / 20.000 across
+the five tiers — rendered from the page rather than transcribed from the JSON.
+
+**The mirror itself was not modified to do this.** Tab switching needs a click,
+so throwaway copies carrying a small auto-click script were rendered from a
+scratch directory. Those copies were discarded; `site/index.html` never changed,
+as the hash check above still proves.
+
 ## Known limits of this capture
 
 - **One point in time.** If the site is edited upstream, this is a snapshot of
@@ -84,9 +112,12 @@ docs for drift.
 - **No server behaviour captured.** Netlify's headers (HSTS, caching, edge
   behaviour) are not reproduced by serving the file elsewhere; the deployment
   runbook sets its own — see [[13-production-deployment-runbook]].
-- **Not visually verified.** The mirror is proven byte-identical, which is a
-  stronger guarantee than a screenshot comparison, but no rendered screenshot
-  was taken in this environment. Anyone with a browser should open it once as a
-  sanity check — see [[PROGRESS]].
+- **Rendered headlessly, not on a real device.** Screenshots came from headless
+  Chromium at a 390px viewport. Fonts are a system stack (see
+  [[06-design-system]]), so a real iPhone or Android will differ slightly in
+  type rendering. Open it once on a real phone.
+- **Interactive flows were not exercised.** Nothing was added to a cart and no
+  WhatsApp message was generated — that would send a real message to a real
+  business number.
 
 Related: [[08-technical-inventory]] · [[13-production-deployment-runbook]]

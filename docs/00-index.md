@@ -24,6 +24,8 @@ Where a rule was inferred rather than stated on the page, it is marked
 | 09 | [[09-open-questions]] | What the mockup does not answer |
 | 13 | [[13-production-deployment-runbook]] | Deploy to the Ubuntu + Nginx server |
 |  — | [[PROGRESS]] | Build status |
+|  — | `screenshots/` | Rendered evidence — home, menu, order, catering kantor |
+|  — | `../tests/README.md` | Pricing-engine tests — 31 passing, run against the real code |
 
 ## The single most important fact
 

@@ -31,6 +31,7 @@ plain integers — there are no cents and no floating-point prices.
 | **BR-2.3** | An item cannot be added until **at least one date** is selected. |
 | **BR-2.4** | Dates are picked on a per-card mini-calendar and shown as removable chips. Non-consecutive runs are visually marked with a gap break. |
 | **BR-2.5** | **Same-day ordering is closed.** Today's date cannot be selected — the earliest deliverable date is tomorrow. |
+| **BR-2.6** | **Healthy Meal and Bulking Extra do not deliver on Sundays.** Stated on the page: *"Khusus Healthy Meal & Bulking Extra tidak melayani hari Minggu."* The other six cards carry no such restriction. |
 
 ## BR-3 — Daily Order pricing (the rate-tier engine)
 
@@ -95,6 +96,8 @@ holds five promotes the **whole order** to Mingguan.
 | **BR-5.3** | Committed days per period: **Mingguan = 5 days**, **Bulanan = 20 days**. |
 | **BR-5.4** | `healthy` costs exactly **Rp 10.000 more per pax per day** than `reguler` at every tier and period. |
 | **BR-5.5** | `bulanan` is exactly **Rp 1.000 less per pax per day** than `mingguan` at every tier. |
+| **BR-5.6** | Minimum **5 pax per day**. |
+| **BR-5.7** | **Free fruit every Friday** is included with Catering Kantor. Stated on the card; no price impact. |
 
 ## BR-6 — Add-ons
 
@@ -149,7 +152,7 @@ today is selectable, which BR-2.5 largely forecloses.
 
 | ID | Rule |
 |----|------|
-| **BR-10.1** | Delivery is **free** when the order is for **at least 5 days** *and* the menu is at least **Rp 26.000/day**. |
+| **BR-10.1** | Delivery is **free** when the order is for **at least 5 days** *and* the menu is at least **Rp 26.000/day**. The Menu-tab poster words the same offer as *"free ongkir, min. order 1 minggu"*. |
 | **BR-10.2** | Below either threshold — fewer than 5 days, or under Rp 26.000/day — delivery costs **Rp 5.000 per delivery**, across all categories. |
 | **BR-10.3** | **Not implemented in the page.** It is displayed as policy text and never added to any total. The WhatsApp message the admin receives therefore under-states the amount due for small orders. |
 

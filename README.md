@@ -24,7 +24,20 @@ describes the mockup; it does not modify it.
 ```
 site/index.html    the mirror — 4,615,031 bytes, self-contained, zero external requests
 docs/              documentation reconstructed from the mirror (also an Obsidian vault)
+docs/screenshots/  rendered evidence — home, menu, order, catering kantor
+scripts/           verify-mirror.sh — re-prove the capture against disk and upstream
+tests/             pricing-engine tests, run against code extracted from the mirror
 ```
+
+## Tests
+
+```bash
+node --test tests/
+```
+
+31 tests, no dependencies. They extract the real `analyze()` out of
+`site/index.html` at run time and assert the documented pricing rules against
+it — see [`tests/README.md`](tests/README.md).
 
 ## Documentation
 
