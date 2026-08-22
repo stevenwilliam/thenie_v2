@@ -295,7 +295,23 @@ server {
     listen 80;
     listen [::]:80;
     server_name www.thenie.id;
-    return 301 http://thenie.id$request_uri;
+
+    # The ACME challenge MUST be matched before the redirect below, or certbot
+    # cannot validate www.thenie.id. A bare `return` at server level short-
+    # circuits the rewrite phase before any location is chosen, so the redirect
+    # lives inside `location /` rather than at server level. This is the whole
+    # reason the block is shaped this way -- do not "simplify" it.
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/thenie;
+    }
+
+    # Redirect straight to HTTPS, not to http://thenie.id. Sending it to plain
+    # HTTP costs an extra hop, and behind a TLS-terminating proxy set to
+    # "Flexible" SSL it produces an infinite redirect loop
+    # (ERR_TOO_MANY_REDIRECTS) -- see Part 12.
+    location / {
+        return 301 https://thenie.id$request_uri;
+    }
 }
 
 server {
@@ -567,6 +583,45 @@ curl -s --compressed https://thenie.id | sha256sum
 | Very slow first load | The 4.6 MB payload | Expected. See Q-15 in [[09-open-questions]]. |
 | Old version still showing | Browser cache | Hard-refresh (Ctrl-Shift-R). Confirm `cache-control` in Part 8. |
 | Existing PHP site broke | You edited its config | `sudo nginx -T` and compare. This runbook never touches it. |
+| **ERR_TOO_MANY_REDIRECTS** | A proxy or registrar is redirecting back at you | See the dedicated section below — do not start by editing Nginx. |
+
+### ERR_TOO_MANY_REDIRECTS
+
+A loop means two redirects point at each other. Find the pair before changing
+anything. First ask what the origin itself says, bypassing DNS and any proxy:
+
+```bash
+curl -sI -H "Host: www.thenie.id" http://127.0.0.1/ | grep -Ei "^HTTP|^Location"
+curl -sI -H "Host: thenie.id"     http://127.0.0.1/ | grep -Ei "^HTTP|^Location"
+```
+
+Expected: `www` gives one `301` to `https://thenie.id/`, and the apex gives
+`200` (or a single `301` to HTTPS that certbot added). Then compare with what
+the outside world sees:
+
+```bash
+curl -sIL --max-redirs 5 http://thenie.id 2>&1 | grep -Ei "^HTTP|^Location"
+```
+
+**If the origin is clean but the public chain loops, the loop is not on this
+machine.** In order of likelihood:
+
+1. **Cloudflare SSL mode set to "Flexible."** Cloudflare terminates TLS and
+   talks to the origin over plain HTTP; the origin redirects to HTTPS;
+   Cloudflare re-requests over HTTP; forever. Fix: SSL/TLS → **Full (strict)**.
+   This is the most common cause and is completely invisible from the server.
+2. **Registrar "web forwarding" apex → www**, while Nginx sends www → apex.
+   Common on `.id` registrars and often on by default. Fix: delete the
+   forwarding rule; the A records in Part 1 already do the job.
+3. **Both a redirect rule and certbot's redirect on the same block** — check
+   `sudo grep -nE "return|if \(" /etc/nginx/sites-available/thenie` for two
+   redirects in one server block.
+
+Only if the *origin* loops is it this config. Verify it directly:
+
+```bash
+sudo grep -nE "server_name|listen|return|if \(" /etc/nginx/sites-available/thenie
+```
 
 ---
 
