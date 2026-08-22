@@ -73,8 +73,11 @@ guessed at.
 | `www` redirect verified | ✅ | `Host: www.thenie.id` → `301`, `Location: http://thenie.id/` |
 | `try_files` fallback verified | ✅ | `/anything` → HTTP 200 |
 | Appendix B (port-only) config valid | ✅ | `nginx -t` clean |
-| **Deployed to your server** | ⬜ | **In progress — you are at Part 4/5 on `172.236.152.44`.** |
-| TLS issued | ⬜ | Needs DNS first |
+| Cloudflare config (Appendix D) written | ✅ | Origin Certificate route; certbot skipped — the edge intercepts HTTP-01 |
+| Appendix D config validated with TLS | ✅ | nginx 1.28.3 + throwaway cert: HTTP/2 200, all five headers, `www` → 301 apex, TLS-served hash matches |
+| **Deployed to your server** | 🟡 | Files in place; `sites-enabled` symlink and origin TLS still to do |
+| TLS on the origin | ⬜ | Appendix D1–D5 — Cloudflare Origin Certificate |
+| `ERR_TOO_MANY_REDIRECTS` diagnosed | ✅ | Cloudflare Flexible SSL + origin with no TLS. Not a config bug. |
 
 **Two real bugs were found by testing the config rather than trusting it:**
 

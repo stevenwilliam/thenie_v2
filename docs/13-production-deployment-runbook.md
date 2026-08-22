@@ -422,6 +422,11 @@ Expect `HTTP/1.1 200 OK` and `Content-Type: text/html`.
 
 ## Part 7 — HTTPS
 
+> **Proxying through Cloudflare?** `thenie.id` is. **Skip this Part entirely**
+> and use [Appendix D](#appendix-d--behind-cloudflare-the-thenieid-setup) —
+> certbot's HTTP-01 challenge is intercepted by the Cloudflare edge, and a
+> Cloudflare Origin Certificate is both easier and longer-lived.
+
 Install certbot if this machine does not have it yet:
 
 ```bash
@@ -663,6 +668,218 @@ Still worth knowing:
 - **Keep the machine patched:** `sudo apt update && sudo apt upgrade`.
 - **No data is stored**, so there is nothing to back up beyond the git
   repository — which is the file's real backup.
+
+---
+
+## Appendix D — Behind Cloudflare (the `thenie.id` setup)
+
+**Use this instead of Parts 5, 6 and 7** when the domain is proxied through
+Cloudflare — orange cloud in the DNS panel. `thenie.id` is.
+
+### Why the default runbook loops here
+
+With Cloudflare proxying and **no certificate on the origin**, Cloudflare's SSL
+mode has to be **Flexible**, which means Cloudflare always speaks plain **HTTP**
+to your server. Your server answers `301 -> https://…`. Cloudflare hands that
+redirect to the browser, the browser asks for HTTPS again, Cloudflare again
+fetches over HTTP, and the origin redirects again. Forever:
+
+```
+browser --HTTPS--> Cloudflare --HTTP--> origin
+                                          |
+                        301 https://thenie.id  <-- origin never sees HTTPS,
+                                          |         so it never stops redirecting
+browser <--- 301 -------- Cloudflare <----+
+```
+
+Symptom: **`ERR_TOO_MANY_REDIRECTS`**. It is invisible from the server — every
+`curl` against `127.0.0.1` looks perfectly correct, because the loop only
+exists across the Cloudflare hop.
+
+The fix is to put a real certificate on the origin and set Cloudflare to
+**Full (strict)** so it connects over HTTPS end to end.
+
+### Why not certbot here
+
+Cloudflare proxies port 80, so certbot's HTTP-01 challenge is intercepted by the
+edge — and if **Always Use HTTPS** is on, the challenge is redirected and
+validation fails. A **Cloudflare Origin Certificate** avoids all of it: free,
+valid **15 years**, trusted by Cloudflare specifically, and no renewal timer to
+forget. It is only trusted *by Cloudflare*, which is exactly right — visitors
+see Cloudflare's own public certificate.
+
+### D1 — Create the Origin Certificate
+
+In the Cloudflare dashboard: **SSL/TLS -> Origin Server -> Create Certificate**.
+
+- Private key type: **RSA (2048)**
+- Hostnames: `thenie.id` and `*.thenie.id`
+- Validity: **15 years**
+
+Cloudflare shows two blocks, **once only**. Copy both.
+
+On the server:
+
+```bash
+sudo mkdir -p /etc/ssl/cloudflare
+sudo chmod 700 /etc/ssl/cloudflare
+sudo vi /etc/ssl/cloudflare/thenie.id.pem     # paste the Origin Certificate
+sudo vi /etc/ssl/cloudflare/thenie.id.key     # paste the Private Key
+sudo chmod 600 /etc/ssl/cloudflare/thenie.id.key
+sudo chmod 644 /etc/ssl/cloudflare/thenie.id.pem
+```
+
+### D2 — Let Nginx see real visitor IPs
+
+Every request arrives from Cloudflare, so without this your logs record
+Cloudflare's addresses instead of your visitors'.
+
+```bash
+sudo sh -c '{ \
+  curl -s https://www.cloudflare.com/ips-v4 | sed "s|^|set_real_ip_from |; s|$|;|"; \
+  curl -s https://www.cloudflare.com/ips-v6 | sed "s|^|set_real_ip_from |; s|$|;|"; \
+} > /etc/nginx/cloudflare-ips.conf'
+head -3 /etc/nginx/cloudflare-ips.conf
+```
+
+Re-run that occasionally; Cloudflare's ranges change rarely but they do change.
+
+### D3 — Replace the site config
+
+```bash
+sudo vi /etc/nginx/sites-available/thenie
+```
+
+Replace the whole file with:
+
+```nginx
+# ---- Real visitor IPs ----
+# Behind Cloudflare every request arrives from a Cloudflare address, so logs and
+# any rate limiting would otherwise see Cloudflare instead of the visitor.
+include /etc/nginx/cloudflare-ips.conf;
+real_ip_header CF-Connecting-IP;
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name thenie.id www.thenie.id;
+
+    # Kept reachable so a certificate can be validated over HTTP if you ever
+    # switch away from the Cloudflare Origin certificate.
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/thenie;
+    }
+
+    location / {
+        return 301 https://thenie.id$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name www.thenie.id;
+
+    ssl_certificate     /etc/ssl/cloudflare/thenie.id.pem;
+    ssl_certificate_key /etc/ssl/cloudflare/thenie.id.key;
+
+    return 301 https://thenie.id$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name thenie.id;
+
+    ssl_certificate     /etc/ssl/cloudflare/thenie.id.pem;
+    ssl_certificate_key /etc/ssl/cloudflare/thenie.id.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    root /var/www/thenie;
+    index index.html;
+
+    add_header Cache-Control "public, max-age=0, must-revalidate" always;
+    add_header X-Robots-Tag "noindex, nofollow" always;
+    add_header X-Frame-Options        "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy        "strict-origin-when-cross-origin" always;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    gzip             on;
+    gzip_types       text/css application/javascript;
+    gzip_min_length  1024;
+    gzip_comp_level  6;
+
+    access_log /var/log/nginx/thenie.access.log;
+    error_log  /var/log/nginx/thenie.error.log;
+}
+```
+
+### D4 — Enable, test, reload
+
+```bash
+sudo ln -sf /etc/nginx/sites-available/thenie /etc/nginx/sites-enabled/thenie
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Confirm the origin now answers on **443**, which it previously did not:
+
+```bash
+curl -skI -H "Host: thenie.id" https://127.0.0.1/ | head -3
+```
+
+### D5 — Switch Cloudflare to Full (strict)
+
+**SSL/TLS -> Overview -> Full (strict)**. Do this only *after* D4 succeeds — the
+origin must already be answering HTTPS or the site goes down.
+
+Then **SSL/TLS -> Edge Certificates -> Always Use HTTPS: On**, so Cloudflare
+handles the HTTP-to-HTTPS upgrade at the edge instead of your origin.
+
+### D6 — Verify
+
+```bash
+curl -sIL --max-redirs 5 http://thenie.id     2>&1 | grep -Ei "^HTTP|^location"
+curl -sIL --max-redirs 5 http://www.thenie.id 2>&1 | grep -Ei "^HTTP|^location"
+```
+
+Both must end in a single `200`, with `www` passing through exactly one `301` to
+`https://thenie.id/`. No repeated `Location` lines — a repeat is still a loop.
+
+```bash
+curl -s https://thenie.id | sha256sum
+```
+
+Must print `9d4cfefba381b6a8c3adbc822281e701c7b8cca98d1e7d40b5ac1ccafbb0df49`.
+
+### D7 — Optional hardening
+
+Once Cloudflare is the only route in, refuse direct-to-IP traffic so nobody can
+bypass the edge:
+
+```bash
+sudo ufw allow from 173.245.48.0/20 to any port 443 proto tcp
+# ... repeat for each range in /etc/nginx/cloudflare-ips.conf, then:
+# sudo ufw delete allow 443/tcp
+```
+
+Do this **last**, and keep your SSH port (30022) open, or you will lock yourself
+out. Cloudflare's **Authenticated Origin Pulls** achieves the same thing more
+cleanly if you prefer.
+
+### Verified
+
+The config in D3 was tested locally against nginx 1.28.3 with a throwaway
+certificate: `nginx -t` clean, HTTP returns one `301` to `https://thenie.id/`,
+HTTPS apex returns `200` over HTTP/2 with all five headers, `www` over HTTPS
+returns a single `301` to the apex, and the bytes served over TLS hash to the
+capture value.
 
 ---
 
