@@ -11,3 +11,11 @@ dist/
 
 # harness-local config, not project content
 .claude/
+
+# Backend secrets — never in git. .env.example is the documented surface.
+.env
+.env.*
+!.env.example
+
+# Go build output
+/server/bin/

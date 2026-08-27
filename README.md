@@ -9,6 +9,7 @@ site/overlays/         our changes, stitched in at build time
 scripts/build-site.sh  mirror + overlays → dist/index.html
 scripts/verify-mirror.sh  proves the mirror still matches upstream
 scripts/contrast.py    WCAG contrast for the palette — the source of docs/06's table
+server/                the Go + PostgreSQL engine that makes the content editable
 dist/index.html        what gets deployed (git-ignored — rebuild after pull)
 docs/                  the reconstructed specification
 tests/                 pricing-engine tests, run against the real shipped code
@@ -45,6 +46,21 @@ python3 scripts/contrast.py
 # look at it
 python3 -m http.server 8080 --directory dist
 ```
+
+## The backend engine
+
+`server/` is a Go + PostgreSQL service holding the content the page used to
+hard-code. Publishing next week's menu is one API call instead of an HTML edit:
+
+```bash
+cd server && go build -o bin/thenied ./cmd/thenied && cd ..
+./server/bin/thenied migrate up
+./server/bin/thenied seed        # extracts the content FROM site/index.html
+./server/bin/thenied serve
+```
+
+The page still works with it switched off — see
+[docs/15-backend-engine.md](docs/15-backend-engine.md).
 
 ## What the site is
 
@@ -89,6 +105,7 @@ Start at [docs/00-index.md](docs/00-index.md).
 | [09](docs/09-open-questions.md) | What it does not answer |
 | [13](docs/13-production-deployment-runbook.md) | **Deploy it** |
 | [14](docs/14-overlays.md) | The overlay mechanism |
+| [15](docs/15-backend-engine.md) | **The backend engine** — menus as data, not markup |
 
 ## Deploying
 

@@ -1,0 +1,351 @@
+<!-- ─────────────────────────────────────────────────────────────────────────
+     Content hydration (overlay — NOT part of the captured mirror).
+     Injected before the closing body tag by scripts/build-site.sh.
+     See docs/16-backend-engine.md.
+
+     The captured page hard-codes its weekly menus as markup (BR-15.1), which is
+     why publishing next week's menu means editing HTML. This script fetches the
+     menus from the config API and rewrites them in place, so a menu change is a
+     database write instead of a re-capture.
+
+     Three rules govern everything below:
+
+       1. NEVER break the page. Every failure path — no API, bad JSON, a shape
+          that does not match, a thrown exception — leaves the captured content
+          exactly as it was. The page must work with this file deleted, with the
+          API down, and with the API lying.
+
+       2. Only touch what JavaScript does not read. The order app captures
+          data-rates into a closure at parse time, and this overlay is injected
+          AFTER that script has already run, so writing to those attributes
+          would change what is displayed without changing what is calculated.
+          That is worse than doing nothing, so rates are CHECKED here and never
+          written. See "rate drift" below.
+
+       3. Same shape, same classes. The rewritten markup is byte-comparable with
+          what it replaces, so the page's own CSS keeps working and a diff of
+          before/after is readable.
+     ───────────────────────────────────────────────────────────────────────── -->
+<script>
+(function () {
+  "use strict";
+
+  // ---- where the API lives ----------------------------------------------
+  // Priority: an explicit global (set by build-site.sh from THENIE_API_BASE),
+  // then a <meta> tag, then same-origin. Same-origin is the right default for
+  // a local preview and for a deployment that proxies /api to the service.
+  function apiBase() {
+    if (typeof window.THENIE_API_BASE === "string" && window.THENIE_API_BASE) {
+      return window.THENIE_API_BASE.replace(/\/+$/, "");
+    }
+    var meta = document.querySelector('meta[name="thenie-api"]');
+    if (meta && meta.content) return meta.content.replace(/\/+$/, "");
+    return "/api/v1";
+  }
+
+  var CACHE_KEY = "thenie.siteconfig.v1";
+  var ETAG_KEY = "thenie.siteconfig.etag.v1";
+
+  // ---- tiny helpers ------------------------------------------------------
+
+  // The page writes Indonesian dates as "Senin 24 Agu". Rebuilt lines have to
+  // match, or the menu suddenly reads in English on a page that is entirely
+  // Indonesian.
+  var HARI = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+  var BULAN = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+
+  function parseDate(iso) {
+    // Parse as a LOCAL date, never through Date(iso) — that treats a bare
+    // YYYY-MM-DD as UTC midnight, which in Asia/Jakarta (UTC+7) renders as the
+    // previous day. The whole menu would shift back by one.
+    var p = String(iso).split("-");
+    return new Date(+p[0], +p[1] - 1, +p[2]);
+  }
+
+  function dayLabel(iso) {
+    var d = parseDate(iso);
+    return HARI[d.getDay()] + " " + d.getDate() + " " + BULAN[d.getMonth()];
+  }
+
+  // Everything that reaches the DOM goes through a text node or textContent.
+  // Nothing here builds HTML from API strings: a menu item is data, and data
+  // does not get to write markup.
+  function el(tag, className, text) {
+    var n = document.createElement(tag);
+    if (className) n.className = className;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  function log(level, msg, extra) {
+    if (typeof console === "undefined" || !console[level]) return;
+    if (extra !== undefined) console[level]("[thenie] " + msg, extra);
+    else console[level]("[thenie] " + msg);
+  }
+
+  // ---- fetching ----------------------------------------------------------
+
+  function cached() {
+    try {
+      var raw = window.localStorage.getItem(CACHE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      // Private mode, blocked storage, corrupt JSON — all equally fine to
+      // ignore. The cache is an optimisation, never a dependency.
+      return null;
+    }
+  }
+
+  function store(doc, etag) {
+    try {
+      window.localStorage.setItem(CACHE_KEY, JSON.stringify(doc));
+      if (etag) window.localStorage.setItem(ETAG_KEY, etag);
+    } catch (e) { /* quota or blocked storage; not worth reporting */ }
+  }
+
+  function load() {
+    var url = apiBase() + "/site-config";
+    var headers = {};
+    var prev = cached();
+    try {
+      var etag = window.localStorage.getItem(ETAG_KEY);
+      // Only send If-None-Match when we still hold the body it refers to;
+      // otherwise a 304 would leave us with nothing to render.
+      if (etag && prev) headers["If-None-Match"] = etag;
+    } catch (e) { /* no storage */ }
+
+    // A slow API must not hold the page. 6s then give up and keep the
+    // captured content.
+    var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    var timer = controller ? window.setTimeout(function () { controller.abort(); }, 6000) : null;
+
+    return fetch(url, {
+      headers: headers,
+      credentials: "omit",
+      signal: controller ? controller.signal : undefined
+    }).then(function (res) {
+      if (timer) window.clearTimeout(timer);
+      if (res.status === 304 && prev) return prev;
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      var tag = res.headers.get("ETag");
+      return res.json().then(function (doc) {
+        store(doc, tag);
+        return doc;
+      });
+    }).catch(function (err) {
+      if (timer) window.clearTimeout(timer);
+      // Fall back to the last good copy so a customer on a flaky connection
+      // still sees last week's fetched menu rather than the captured one.
+      if (prev) {
+        log("info", "config API unreachable, using cached copy", err && err.message);
+        return prev;
+      }
+      throw err;
+    });
+  }
+
+  // ---- menu hydration ----------------------------------------------------
+
+  // Rebuilds one <details class="menu-week"> from a cycle, in the page's own
+  // markup shape:
+  //
+  //   <summary>📅 Lihat menu minggu ini (Minggu ke-35, 24–28 Agustus 2026)</summary>
+  //   <div class="menu-day"><b>Senin 24 Agu</b> — Nasi Merah (100g), …
+  //       <span class="kcal">±455 kkal</span></div>
+  function renderCycle(details, cycle, days, whenLabel) {
+    var summary = details.querySelector("summary");
+    if (!summary) return false;
+
+    // The label in the capture reads "(Minggu ke-35, 24–28 Agustus 2026)" while
+    // the API stores "Minggu ke-35 · 24–28 Agustus 2026" — same content, the
+    // separator differs. Normalise rather than store the punctuation twice.
+    var label = String(cycle.label || "").replace(" · ", ", ");
+    summary.textContent = "📅 Lihat menu " + whenLabel + " (" + label + ")";
+
+    var frag = document.createDocumentFragment();
+    for (var i = 0; i < days.length; i++) {
+      var day = days[i];
+      var row = el("div", "menu-day");
+      row.appendChild(el("b", null, dayLabel(day.date)));
+
+      // BR-15.3 — Thursday is the meat day and carries a star in the capture.
+      if (day.is_meat_day) row.appendChild(document.createTextNode(" ⭐"));
+
+      var parts = [];
+      var items = day.items || [];
+      for (var j = 0; j < items.length; j++) {
+        parts.push(items[j].grams ? items[j].name + " (" + items[j].grams + "g)" : items[j].name);
+      }
+      row.appendChild(document.createTextNode(" — " + parts.join(", ") + " "));
+
+      if (day.kcal) row.appendChild(el("span", "kcal", "±" + day.kcal + " kkal"));
+      frag.appendChild(row);
+    }
+
+    // Replace the day rows, keep the <summary>.
+    var old = details.querySelectorAll(".menu-day");
+    for (var k = 0; k < old.length; k++) old[k].parentNode.removeChild(old[k]);
+    details.appendChild(frag);
+    return true;
+  }
+
+  function hydrateMenus(doc) {
+    var menu = doc.menu || {};
+    if (!menu.current) {
+      log("info", "no published menu cycle; keeping captured menus");
+      return 0;
+    }
+    // The API resolves "current" against today in Asia/Jakarta. The capture's
+    // own labels are frozen at capture time, so after the capture's week passes
+    // they are simply wrong — this is the staleness the engine exists to fix.
+    var plans = doc.plans || [];
+    var touched = 0;
+
+    for (var i = 0; i < plans.length; i++) {
+      var plan = plans[i];
+      var card = document.querySelector('.order-card[data-sub="' + cssEscape(plan.card_key) + '"]');
+      if (!card) continue;
+      var blocks = card.querySelectorAll("details.menu-week");
+      if (!blocks.length) continue;
+
+      // The capture puts next week first, this week second. Keep that order.
+      var order = [];
+      if (menu.next && menu.next.days && menu.next.days[plan.slug]) {
+        order.push({ cycle: menu.next, days: menu.next.days[plan.slug], when: "minggu depan" });
+      }
+      if (menu.current.days && menu.current.days[plan.slug]) {
+        order.push({ cycle: menu.current, days: menu.current.days[plan.slug], when: "minggu ini" });
+      }
+      if (!order.length) continue;
+
+      for (var b = 0; b < blocks.length; b++) {
+        if (b < order.length) {
+          if (renderCycle(blocks[b], order[b].cycle, order[b].days, order[b].when)) touched++;
+        } else {
+          // Fewer cycles published than the capture had blocks. Hide the extra
+          // rather than leave a stale week sitting under a fresh one.
+          blocks[b].style.display = "none";
+        }
+      }
+    }
+    return touched;
+  }
+
+  // CSS.escape is not universal; data-sub values here are plain ASCII words, so
+  // escaping quotes and backslashes is sufficient and dependency-free.
+  function cssEscape(s) {
+    return String(s).replace(/["\\]/g, "\\$&");
+  }
+
+  // ---- contact details ---------------------------------------------------
+
+  function hydrateContact(doc) {
+    var p = doc.params || {};
+    var changed = 0;
+
+    // Only the href is rewritten, never the visible text: the page formats the
+    // number as "0818-100-523" and the API stores "62818100523". Rewriting the
+    // text would replace a human-readable number with a raw one.
+    if (p["contact.whatsapp_primary"]) {
+      var links = document.querySelectorAll('a[href*="wa.me/"]');
+      for (var i = 0; i < links.length; i++) {
+        var href = links[i].getAttribute("href") || "";
+        // Leave the secondary number alone; it is a different contact route.
+        if (p["contact.whatsapp_secondary"] && href.indexOf(p["contact.whatsapp_secondary"]) !== -1) continue;
+        var next = href.replace(/wa\.me\/\d+/, "wa.me/" + p["contact.whatsapp_primary"]);
+        if (next !== href) { links[i].setAttribute("href", next); changed++; }
+      }
+    }
+    if (p["contact.email"]) {
+      var mails = document.querySelectorAll('a[href^="mailto:"]');
+      for (var j = 0; j < mails.length; j++) {
+        mails[j].setAttribute("href", "mailto:" + p["contact.email"]);
+        if (mails[j].textContent.indexOf("@") !== -1) mails[j].textContent = p["contact.email"];
+        changed++;
+      }
+    }
+    return changed;
+  }
+
+  // ---- rate drift --------------------------------------------------------
+
+  // Rates are CHECKED, never written. See rule 2 at the top of this file: the
+  // order app captured data-rates into a closure before this script ran, so
+  // writing them now would change the displayed price without changing the
+  // calculated one — a page that quotes one number and charges another.
+  //
+  // So instead this reports. A drift means someone edited rates through the
+  // admin API and the page has not been re-captured; the fix is upstream, not
+  // here.
+  function checkRateDrift(doc) {
+    var plans = doc.plans || [];
+    var drift = [];
+    for (var i = 0; i < plans.length; i++) {
+      var plan = plans[i];
+      var card = document.querySelector('.order-card[data-sub="' + cssEscape(plan.card_key) + '"]');
+      if (!card) continue;
+      var raw = card.getAttribute("data-rates");
+      if (!raw) continue;
+      var onPage;
+      try { onPage = JSON.parse(raw); } catch (e) { continue; }
+      var keys = ["daily", "weeklyPerDay", "monthlyPerDay", "flexiWeeklyPerDay", "flexiMonthlyPerDay"];
+      for (var k = 0; k < keys.length; k++) {
+        if (Number(onPage[keys[k]]) !== Number(plan.rates[keys[k]])) {
+          drift.push({ plan: plan.card_key, field: keys[k], page: onPage[keys[k]], api: plan.rates[keys[k]] });
+        }
+      }
+    }
+    if (drift.length) {
+      log("warn",
+        "the API's rates differ from the captured page's in " + drift.length + " place(s). " +
+        "The order calculator uses the CAPTURED rates — re-capture the page to apply these.",
+        drift);
+    }
+    return drift;
+  }
+
+  // ---- run ---------------------------------------------------------------
+
+  function run(doc) {
+    // Kill switch: an operator can turn hydration off without a deploy.
+    if (doc.params && doc.params["site.hydration_enabled"] === "false") {
+      log("info", "hydration disabled by site.hydration_enabled");
+      return;
+    }
+
+    var menus = hydrateMenus(doc);
+    var contacts = hydrateContact(doc);
+    var drift = checkRateDrift(doc);
+
+    // Exposed for debugging and for whatever hydrates next. Read-only by
+    // convention; nothing on the page reads it.
+    window.__thenieConfig = doc;
+
+    log("info", "hydrated revision " + doc.revision +
+      " (" + menus + " menu block(s), " + contacts + " contact link(s)" +
+      (drift.length ? ", " + drift.length + " rate drift" : "") + ")");
+  }
+
+  function start() {
+    // One try/catch around everything. Rule 1: a thrown exception here must
+    // leave the page exactly as captured, not half-rewritten.
+    load().then(function (doc) {
+      try {
+        run(doc);
+      } catch (err) {
+        log("warn", "hydration failed; keeping captured content", err);
+      }
+    }).catch(function (err) {
+      log("info", "no config available; keeping captured content", err && err.message);
+    });
+  }
+
+  if (typeof fetch !== "function" || typeof Promise !== "function") {
+    log("info", "browser too old for hydration; keeping captured content");
+  } else if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", start);
+  } else {
+    start();
+  }
+})();
+</script>

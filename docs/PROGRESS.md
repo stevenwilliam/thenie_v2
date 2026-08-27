@@ -4,8 +4,8 @@
 
 A ✅ here means it was **actually executed and observed**, not merely written.
 
-_Last updated: 2026-08-27 — the site was re-captured and everything below was
-re-verified against the new mirror._
+_Last updated: 2026-08-27 — the site was re-captured, everything was re-verified
+against the new mirror, and a backend engine was built (§10)._
 
 ---
 
@@ -130,6 +130,38 @@ Only these changed:
 | The page works | rendered in Chrome 151, six pages, JS execution confirmed in the DOM |
 | The overlay fixes something real | before/after screenshots at 360×760 |
 
+## 10. Backend engine (`server/`)
+
+| Item | Status | Evidence |
+|------|--------|----------|
+| Database + role `thenie`, `_test` twin | ✅ | matches the one-DB-per-project pattern; PostgreSQL 18.6 |
+| Connection config copied from healthy_catering's shape | ✅ | `.env` (git-ignored, 0600), `.env.example` documented |
+| Hexagonal layout — domain / app / adapter / platform | ✅ | `go build ./...`, `go vet ./...` clean |
+| Platform packages carried over, not reinvented | ✅ | migrate, database, id from healthy_catering; apierror, logging, config adapted |
+| 6 migrations, up + down, `go:embed` | ✅ | `migrate up` → 6 applied; `migrate status` clean |
+| Money as `BIGINT` whole rupiah, integer arithmetic only | ✅ | no float on any price path, incl. basis-point discounts |
+| Database enforces the invariants | ✅ | `rates_monotonic`, `flexi_never_cheaper`, GiST `menu_cycles_no_overlap`, one-default and one-catch-all partial indexes |
+| Domain unit tests | ✅ | 2 packages, all passing, no database needed |
+| Driver-error regression test | ✅ | pins that gorm's errors stay reachable as `*pgconn.PgError` |
+| **Seed extracted from the mirror, not hand-written** | ✅ | 4 plans, 3 tier products, 20 Kantor bands, 27 add-ons, 9 areas, 5 windows, 2 cycles |
+| Extracted values match `04-pricing-catalogue.md` | ✅ | every rate, band and ladder compared — exact |
+| Public API | ✅ | one GET, ETag from a revision trigger; 304 costs 200 B vs 25 KB |
+| Admin API behind a bearer token | ✅ | constant-time compare; 401 verified without and with a wrong token |
+| Every write validated in domain → CHECK → `validate` | ✅ | 9 rejection cases exercised against the running service |
+| Hydration overlay | ✅ | `site/overlays/hydrate.html` |
+| **Round-trip proven** | ✅ | HTML → extractor → Postgres → API → overlay → HTML is character-identical for the same week |
+| **New week published without touching HTML** | ✅ | published week 36 → page showed it as "minggu depan" on reload, no rebuild, no re-capture |
+| **Page survives the API being down** | ✅ | service stopped → page renders fully, 299 calendar cells, one info line |
+| Bug found and fixed during the build | ✅ | `translate()` asserted `*pq.Error`; gorm uses pgx, so every constraint violation returned 500. Now typed, with a test |
+
+### The one thing it deliberately does not do
+
+Change what the order calculator charges. The order app captures `data-rates`
+into a closure before any overlay runs, so the overlay **checks** rates and
+reports drift rather than writing them — writing would change the displayed
+price without changing the calculated one. Documented in
+[[15-backend-engine]] with the twenty-line fix if it ever matters.
+
 ## 9. Not done
 
 | Item | Status | Why |
@@ -139,6 +171,9 @@ Only these changed:
 | SEO baseline | ⬜ | same reason — Q-13 |
 | Image deduplication (1.06 MB, 16%) | ⬜ | same reason — Q-15 |
 | Self-hosted font | ⬜ | same reason — Q-24 |
-| Backend, persistence, validation | ⬜ | the v2 rebuild — Q-1 to Q-4, Q-16 |
+| Backend for **orders** (persistence, submission) | ⬜ | the config engine does not take orders — Q-1 to Q-4 |
+| Hydrating the Harga tables, areas, windows, testimonials | ⬜ | stored and served; not yet wired into the DOM |
+| Admin UI | ⬜ | API only today; `curl` or any REST client |
+| systemd unit + Nginx `/api/` proxy on the server | ⬜ | documented in [[15-backend-engine]], not yet applied |
 
 Related: [[00-index]] · [[07-fidelity-and-verification]] · [[09-open-questions]]

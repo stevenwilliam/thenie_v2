@@ -124,6 +124,47 @@ deliberate: an empty `overlays/` almost always means a file was deleted by
 accident. If you genuinely want the bare capture deployed, publish
 `site/index.html` directly and skip the build.
 
+### `hydrate.html` — content hydration
+
+**Added:** 2026-08-27
+
+Fetches `/api/v1/site-config` from the backend engine and rewrites the weekly
+menus and contact links in place, so a menu change is a database write instead
+of a re-capture. Full detail in [[15-backend-engine]].
+
+Three rules govern it, and they are the reason it is safe to ship inside a
+frozen page:
+
+1. **Never break the page.** No API, bad JSON, an unexpected shape, a thrown
+   exception — every path leaves the captured content exactly as it was.
+   Verified by stopping the service and reloading: the page renders fully, all
+   299 calendar cells present, one informational console line.
+2. **Only touch what JavaScript does not read.** The order app captures
+   `data-rates` into a closure at parse time, and overlays are injected *after*
+   that script has run. Writing those attributes would change what is displayed
+   without changing what is calculated. So rates are **checked and reported**,
+   never written.
+3. **Same shape, same classes**, so the page's own CSS keeps working and a
+   before/after diff is readable.
+
+It caches to `localStorage`, sends `If-None-Match` (a 304 costs 200 bytes
+instead of 25 KB), and gives up after 6 seconds so a slow API never holds the
+page. `site.hydration_enabled=false` in `sys_parameters` turns it off without a
+deploy.
+
+#### Where it looks for the API
+
+In order: `window.THENIE_API_BASE`, then `<meta name="thenie-api">`, then
+same-origin `/api/v1`. `build-site.sh` injects the first one from the
+`THENIE_API_BASE` environment variable when it is set:
+
+```bash
+THENIE_API_BASE=https://api.thenie.id/api/v1 ./scripts/build-site.sh
+```
+
+Leaving it unset is correct — and simpler — when Nginx proxies `/api/` to the
+service on the same host, because then no CORS configuration is needed either.
+
 ---
 
 ## Verifying an overlay reached production
@@ -176,5 +217,6 @@ published instead of `dist/index.html`.
 | 2026-08-22 | `whatsapp-fab.html` | Added a floating WhatsApp button; the capture had none |
 | 2026-08-27 | `whatsapp-fab.html` | **Removed** — the new capture ships its own |
 | 2026-08-27 | `fab-clearance.html` | **Added** — keeps the capture's own button clear of the cart bar and the nav pill |
+| 2026-08-27 | `hydrate.html` | **Added** — fetches content from the backend engine and rewrites the weekly menus in place |
 
 Related: [[07-fidelity-and-verification]] · [[13-production-deployment-runbook]] · [[03-site-structure]]

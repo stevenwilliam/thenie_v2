@@ -1,0 +1,10 @@
+DROP TRIGGER IF EXISTS sys_parameters_bump  ON sys_parameters;
+DROP TRIGGER IF EXISTS addons_bump          ON addons;
+DROP TRIGGER IF EXISTS tier_prices_bump     ON tier_prices;
+DROP TRIGGER IF EXISTS tier_packages_bump   ON tier_packages;
+DROP TRIGGER IF EXISTS tier_products_bump   ON tier_products;
+DROP TRIGGER IF EXISTS kantor_rates_bump    ON kantor_rates;
+DROP TRIGGER IF EXISTS plan_pax_prices_bump ON plan_pax_prices;
+DROP TRIGGER IF EXISTS plan_rates_bump      ON plan_rates;
+DROP TRIGGER IF EXISTS plans_bump           ON plans;
+DROP TABLE   IF EXISTS content_blocks;

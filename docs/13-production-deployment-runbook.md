@@ -43,6 +43,13 @@
 > One genuinely new fact, and it is a client-side one: the page now loads its
 > font from Google. See [One thing the server does NOT serve](#one-thing-the-server-does-not-serve-the-font)
 > below. Nothing to configure unless you add a `Content-Security-Policy`.
+>
+> **There is now also a backend engine** (`server/`, see [[15-backend-engine]]).
+> It is **entirely optional and entirely additive**: the page works with it
+> switched off, it is not in the deploy path for `dist/index.html`, and it
+> changes nothing in Parts 1–13 or Appendix D. If you are not running it yet,
+> ignore it — everything below is unaffected. When you want it, see
+> [Appendix E](#appendix-e--the-backend-engine-optional).
 
 **Audience:** someone who has never deployed a server before.
 **Your setup:** the same Ubuntu machine described in the SCHOOL_CATERING runbook
@@ -1196,6 +1203,234 @@ certificate: `nginx -t` clean, HTTP returns one `301` to `https://thenie.id/`,
 HTTPS apex returns `200` over HTTP/2 with all five headers, `www` over HTTPS
 returns a single `301` to the apex, and the bytes served over TLS hash to the
 capture value.
+
+---
+
+## Appendix E — The backend engine (optional)
+
+**Read this only when you want to make the weekly menu editable without
+re-capturing the page.** Everything in Parts 1–13 works without it, and nothing
+in this appendix changes any of it.
+
+What it adds: a small Go service and a PostgreSQL database, so publishing next
+week's menu is one API call instead of an HTML edit. Full design in
+[[15-backend-engine]].
+
+### What stays exactly as it is
+
+| Already working | Affected? |
+|-----------------|-----------|
+| DNS, the web root, the clone at `/opt/thenie_v2` | ❌ no change |
+| The Nginx server blocks from Part 5 | ➕ **one `location` block added**, nothing changed |
+| HTTPS, certbot or the Cloudflare Origin Certificate | ❌ no change |
+| The everyday deploy path (`git pull`, build, `cp`) | ❌ no change |
+| The page itself if the service is down | ❌ still works — it falls back to the captured content |
+
+### E1 — Database and role
+
+The machine already runs PostgreSQL for the school catering system. This adds
+one more database and one more role, exactly as `healthy_catering` and `ruuma`
+already do — **it does not touch either of them**.
+
+```bash
+sudo -u postgres psql -c "CREATE ROLE thenie LOGIN PASSWORD 'REPLACE_ME'"
+sudo -u postgres createdb -O thenie thenie
+sudo -u postgres createdb -O thenie thenie_test
+```
+
+Generate the password with:
+
+```bash
+head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 28
+```
+
+### E2 — Build and configure
+
+```bash
+cd /opt/thenie_v2/server
+go build -o bin/thenied ./cmd/thenied
+
+cd /opt/thenie_v2
+sudo cp .env.example .env
+sudo vi .env
+sudo chmod 600 .env
+sudo chown appuser:appuser .env
+```
+
+Three values must be real:
+
+| Key | Value |
+|-----|-------|
+| `APP_ENV` | `production` |
+| `DATABASE_URL` | the role and password from E1 |
+| `ADMIN_TOKEN` | at least 24 characters — `head -c 32 /dev/urandom \| base64 \| tr -d '/+=' \| head -c 40` |
+
+`APP_ENV=production` makes the service **refuse to start** without an
+`ADMIN_TOKEN`. That is deliberate: a public deployment with unauthenticated
+write endpoints is not a warning, it is an outage waiting to happen.
+
+### E3 — Migrate and seed
+
+```bash
+cd /opt/thenie_v2
+./server/bin/thenied migrate up
+./server/bin/thenied seed
+./server/bin/thenied validate
+```
+
+`seed` reads the content **out of `site/index.html`**, so the database starts as
+a faithful copy of what the site actually shipped. `validate` re-checks it
+against every domain rule and prints what is wrong, if anything.
+
+### E4 — Run it under systemd
+
+```bash
+sudo vi /etc/systemd/system/thenied.service
+```
+
+```ini
+[Unit]
+Description=Thenie site-configuration service
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=appuser
+Group=appuser
+WorkingDirectory=/opt/thenie_v2
+ExecStart=/opt/thenie_v2/server/bin/thenied serve
+Restart=on-failure
+RestartSec=5
+
+# It reads one .env file and listens on one loopback port. Nothing else.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/thenie_v2
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now thenied
+sudo systemctl status thenied --no-pager
+curl -s http://127.0.0.1:8082/healthz
+```
+
+The service binds `:8082`. **Do not open that port in the firewall** — Nginx
+reaches it over loopback, and nothing outside the machine should talk to it
+directly.
+
+### E5 — One Nginx location block
+
+Add this **inside the existing `thenie.id` server block**, alongside the
+`location /` that is already there. Do not create a new server block, and do not
+touch anything else in the file.
+
+```nginx
+    # The config API for the hydration overlay. Same origin as the page, which
+    # means the browser never preflights and no CORS configuration is needed.
+    location /api/ {
+        proxy_pass         http://127.0.0.1:8082;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_read_timeout 30s;
+    }
+```
+
+> **The `add_header` trap from Part 5 applies here too.** This block declares no
+> `add_header`, so it inherits all five from the server block. If you ever add
+> one to it, you must repeat all five — nginx replaces, it does not merge.
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+curl -s https://thenie.id/api/v1/site-config/revision
+```
+
+Serving the API from the same origin is the reason no `CORS_ORIGINS` value is
+needed. If you ever move it to its own host, set `CORS_ORIGINS` to the page's
+origin and rebuild with `THENIE_API_BASE`.
+
+### E6 — Rebuild the page once
+
+The hydration overlay ships in `site/overlays/`, so it arrives with `git pull` —
+but `dist/` is git-ignored, so it only reaches the served page when you rebuild:
+
+```bash
+cd /opt/thenie_v2
+git pull
+./scripts/build-site.sh
+sudo cp dist/index.html /var/www/thenie/index.html
+sudo chown www-data:www-data /var/www/thenie/index.html
+```
+
+Check it landed:
+
+```bash
+grep -c 'Content hydration' /var/www/thenie/index.html   # 1
+```
+
+Then load the site and open the browser console. One line confirms it:
+
+```
+[thenie] hydrated revision 370 (4 menu block(s), 2 contact link(s))
+```
+
+### E7 — Publishing a menu
+
+```bash
+curl -X PUT https://thenie.id/api/v1/admin/menu/cycles \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d @next-week.json
+```
+
+The payload shape is in [[15-backend-engine]]. The change is live on the next
+page load — no rebuild, no `cp`, no re-capture.
+
+### E8 — Everyday commands
+
+```bash
+sudo systemctl status thenied --no-pager
+sudo journalctl -u thenied -f
+sudo journalctl -u thenied --since "1 hour ago" -p err
+
+cd /opt/thenie_v2 && ./server/bin/thenied validate     # is the stored content sane?
+curl -s https://thenie.id/api/v1/site-config/revision  # has anything changed?
+```
+
+### E9 — Turning it off
+
+Three levels, least to most drastic:
+
+```bash
+# 1. Stop hydrating, keep the service running (no deploy needed)
+curl -X PUT https://thenie.id/api/v1/admin/params/site.hydration_enabled \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"value":"false"}'
+
+# 2. Stop the service. The page falls back to captured content on its own.
+sudo systemctl stop thenied
+
+# 3. Remove the overlay entirely and rebuild.
+cd /opt/thenie_v2 && rm site/overlays/hydrate.html && ./scripts/build-site.sh
+sudo cp dist/index.html /var/www/thenie/index.html
+```
+
+At every level the site keeps working. That is the property the whole design is
+built around.
 
 ---
 

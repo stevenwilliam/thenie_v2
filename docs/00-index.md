@@ -26,6 +26,7 @@ _Capture date: **2026-08-27**. SHA-256 `b66ed302…` — see
 | 08 | [[08-technical-inventory]] | File composition, JS surface, what the page does *not* do |
 | 09 | [[09-open-questions]] | What the site does not answer |
 | 13 | [[13-production-deployment-runbook]] | Deploy to the Ubuntu + Nginx server |
+| 15 | [[15-backend-engine]] | The Go + PostgreSQL service that makes the content editable |
 | 14 | [[14-overlays]] | The overlay mechanism — our only additions to the mirror |
 |  — | [[PROGRESS]] | Build status |
 |  — | `screenshots/` | Rendered evidence — all six pages, desktop and mobile |
@@ -46,9 +47,17 @@ Two things, welded together and shipped as **one HTML file**:
 They share one stylesheet, one router, and one file. Navigation between them is
 client-side, on the URL fragment (`#home`, `#order`, …).
 
-## The single most important fact
+## The backend
 
-This is a **front end with no backend**. There is no server, no database, no
+Since 2026-08-27 there is one — `server/`, a Go + PostgreSQL service that holds
+the content and serves it to the page at runtime, so publishing next week's menu
+is an API call rather than an HTML edit. It does **not** change anything below:
+the mirror is still frozen, the page still works with the service switched off,
+and the order flow is still WhatsApp. See [[15-backend-engine]].
+
+## The single most important fact about the page itself
+
+This is a **front end with no backend of its own**. There is no server, no database, no
 account system, and no order storage. An order is assembled in browser memory
 and handed to WhatsApp as a pre-filled message. Closing the tab loses
 everything — there is no `localStorage`, no cookie, no draft recovery.

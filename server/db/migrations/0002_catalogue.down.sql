@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS addons;
+DROP TABLE IF EXISTS tier_prices;
+DROP TABLE IF EXISTS tier_packages;
+DROP TABLE IF EXISTS tier_products;
+DROP TABLE IF EXISTS kantor_rates;
+DROP TABLE IF EXISTS kantor_periods;
+DROP TABLE IF EXISTS plan_pax_prices;
+DROP TABLE IF EXISTS plan_rates;
+DROP TABLE IF EXISTS plans;

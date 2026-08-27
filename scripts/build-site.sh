@@ -43,9 +43,29 @@ mkdir -p "$(dirname "$OUT")"
 tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
 
+# The hydration overlay needs to know where the config API lives. Same-origin
+# ("/api/v1") is the default and is correct when Nginx proxies /api to the
+# service; set THENIE_API_BASE when the API is on another host.
+#
+# This is injected as its own tiny <script> BEFORE the overlays, so the value is
+# already set by the time the overlay runs, and so the overlay itself stays a
+# static file with nothing substituted into it.
+api_script=""
+if [ -n "${THENIE_API_BASE:-}" ]; then
+  case "$THENIE_API_BASE" in
+    *[\"\'\<\>]*)
+      echo "FAIL: THENIE_API_BASE must not contain quotes or angle brackets" >&2
+      exit 1 ;;
+  esac
+  api_script="<script>window.THENIE_API_BASE=\"${THENIE_API_BASE}\";</script>"
+fi
+
 # Everything up to (not including) the </body> line, then the overlays, then the rest.
 line="$(grep -n '</body>' "$MIRROR" | cut -d: -f1)"
 head -n "$((line - 1))" "$MIRROR"  > "$tmp"
+if [ -n "$api_script" ]; then
+  printf '\n%s\n' "$api_script" >> "$tmp"
+fi
 for f in "${overlays[@]}"; do
   printf '\n' >> "$tmp"
   cat "$f"     >> "$tmp"
@@ -60,4 +80,5 @@ chmod 644 "$OUT"
 echo "built: $OUT"
 echo "  mirror:   $(wc -c < "$MIRROR") bytes (unchanged, sha256 verified)"
 for f in "${overlays[@]}"; do echo "  overlay:  ${f#$ROOT/}"; done
+echo "  api base: ${THENIE_API_BASE:-(same origin, /api/v1)}"
 echo "  output:   $(wc -c < "$OUT") bytes  sha256 $(sha256sum "$OUT" | awk '{print $1}')"
