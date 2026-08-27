@@ -1,176 +1,337 @@
 # 02 — Business rules
 
-**Normative.** Every rule carries a `BR-x.y` ID. A rebuild should reference
-these IDs from its code and tests. Every rule here was read out of
-`site/index.html`; nothing has been invented. Rules marked **(inferred)** are
-consistent with the code but not stated on the page.
+Normative rules extracted from the mirror, each with a stable `BR-x.y` ID so the
+rest of the documentation, the tests, and any future rebuild can cite them.
 
-Money in this document is **whole rupiah**. The mockup does all arithmetic in
-plain integers — there are no cents and no floating-point prices.
+**Every rule below was read out of the shipped code or the page's own copy.**
+Where the two disagree, both are recorded and the conflict is raised in
+[[09-open-questions]]. Where a rule is implied rather than written, it is marked
+**(inferred)**.
+
+> **Unchanged since the previous capture.** The pricing engine — `analyze()` and
+> everything around it — is byte-identical to the 2026-08-22 capture. Every rule
+> in this document was re-verified against the 2026-08-27 mirror, and the test
+> suite in `../tests/` passes against it unmodified.
 
 ---
 
-## BR-1 — Cart and items
+## BR-1 — Platform
 
 | ID | Rule |
 |----|------|
-| **BR-1.1** | An order is a **cart of items**. Each item is one product, at one quantity, for one or more delivery dates. |
-| **BR-1.2** | Each item carries **its own recipient** — name, phone, address, area, notes — and **its own delivery time**. Two items in one cart may go to two different people at two different addresses. |
-| **BR-1.3** | Recipient name, phone and address are validated when the item is **added to the cart**, not at checkout. |
-| **BR-1.4** | Checkout is **summary and re-confirmation only**. It collects no new field. |
-| **BR-1.5** | Checkout requires **at least one item**. That is its only validation. |
-| **BR-1.6** | An item may be deleted from the cart (`Hapus`). Editing is done by deleting and re-adding. |
-| **BR-1.7** | The cart lives in **browser memory only**. Reloading or closing the tab discards it. There is no persistence of any kind — no `localStorage`, no cookie, no server draft. |
+| **BR-1.1** | The site is a single HTML file. No backend, no API, no database. |
+| **BR-1.2** | Navigation between the six pages is client-side, on the URL fragment. No page ever reloads. |
+| **BR-1.3** | An order exists only in a JavaScript array (`cart`) in the open tab. |
+| **BR-1.4** | Nothing is persisted. No `localStorage`, no `sessionStorage`, no cookie, no IndexedDB. |
+| **BR-1.5** | Closing or reloading the tab destroys the cart and every part-filled card, silently and without warning. |
+| **BR-1.6** | The only outbound action the site can take is opening a `wa.me` link in a new tab. |
+| **BR-1.7** | The business learns about an order only if the customer presses **send** in WhatsApp. Abandonment is invisible. |
+| **BR-1.8** | All prices are Indonesian Rupiah, formatted `id-ID`, rounded to whole rupiah (`Math.round`). |
 
-## BR-2 — Quantity, dates and the item total
+---
 
-| ID | Rule |
-|----|------|
-| **BR-2.1** | Every item's total is **`unit price × quantity × number of selected dates`**. Each selected date is a full separate delivery of the same quantity. |
-| **BR-2.2** | Quantity may never fall below the product's **minimum tier quantity**. The input clamps up to that minimum. |
-| **BR-2.3** | An item cannot be added until **at least one date** is selected. |
-| **BR-2.4** | Dates are picked on a per-card mini-calendar and shown as removable chips. Non-consecutive runs are visually marked with a gap break. |
-| **BR-2.5** | **Same-day ordering is closed.** Today's date cannot be selected — the earliest deliverable date is tomorrow. |
-| **BR-2.6** | **Healthy Meal and Bulking Extra do not deliver on Sundays.** Stated on the page: *"Khusus Healthy Meal & Bulking Extra tidak melayani hari Minggu."* The other six cards carry no such restriction. |
-
-## BR-3 — Daily Order pricing (the rate-tier engine)
-
-Applies to the four Daily Order cards: Healthy Meal, Bulking Extra, Regular
-Catering, Kids Meal. Each has five rates — see [[04-pricing-catalogue]].
-
-The tier is **derived from the shape of the selected dates**, never chosen by
-the customer. Let `n` = number of dates, `span` = calendar days from first to
-last inclusive, `consecutive` = the dates form an unbroken run.
-
-Evaluated **in order**; first match wins:
-
-| ID | Condition | Tier | Rate |
-|----|-----------|------|------|
-| **BR-3.1** | `consecutive` and `n ≥ 20` | Bulanan | `monthlyPerDay` |
-| **BR-3.2** | `consecutive`, `5 ≤ n ≤ 14`, run crosses a calendar week | Flexi Mingguan | `flexiWeeklyPerDay` |
-| **BR-3.3** | `consecutive`, `14 < n < 20` | Flexi | `daily` *(full price)* |
-| **BR-3.4** | `consecutive`, `n ≥ 5` | Mingguan | `weeklyPerDay` |
-| **BR-3.5** | `consecutive`, `n < 5` | Harian | `daily` |
-| **BR-3.6** | Weekday routine (below) | Bulanan | `monthlyPerDay` |
-| **BR-3.7** | Weekly routine (below) | Mingguan | `weeklyPerDay` |
-| **BR-3.8** | `n ≥ 20` and `span ≤ 45` | Flexi Bulanan | `flexiMonthlyPerDay` |
-| **BR-3.9** | `5 ≤ n < 20` | Flexi Mingguan | `flexiWeeklyPerDay` |
-| **BR-3.10** | otherwise | Flexi | `daily` |
-
-**BR-3.3 is deliberate and counter-intuitive.** A consecutive run longer than 14
-days but short of 20 pays the **full daily rate** — more per day than a 5-day
-order. The discount returns only at 20 days (BR-3.1). The source marks this as a
-revision, not an oversight.
-
-### BR-3.11 — Weekday routine (non-consecutive → Bulanan)
-
-All of: not consecutive · `n ≥ 20` · every weekday used falls in **Mon–Fri** or
-every one in **Mon–Sat** · consecutive gaps are clean for that pattern
-(Mon–Fri: 1 or 3 days; Mon–Sat: 1 or 2 days) · `span ≤ 31`.
-
-### BR-3.12 — Weekly routine (non-consecutive → Mingguan)
-
-All of: not consecutive · `n ≥ 5` · not already a weekday routine · clean
-Mon–Fri or Mon–Sat weekday set · `span ≤ 14` · **at least one Monday–Sunday
-calendar week contains 5 or more of the selected dates**.
-
-The last clause is the sharp edge. `18,19,20,21,24 Aug` is five days but no
-single week holds five of them, so it stays Flexi. Adding days until one week
-holds five promotes the **whole order** to Mingguan.
-
-## BR-4 — Tiered products (quantity-banded)
+## BR-2 — Money
 
 | ID | Rule |
 |----|------|
-| **BR-4.1** | Nasi Bento Box, Nasi Kuning and Paket Acara price by **quantity band**. The band is chosen by quantity; the customer does not pick it. |
-| **BR-4.2** | Quantity below the lowest band's minimum is clamped up to it. |
-| **BR-4.3** | Quantity above the highest band stays in the highest band — the top band's maximum is effectively unbounded. |
-| **BR-4.4** | The active band is highlighted in the on-card rate table as quantity changes. |
+| **BR-2.1** | An item's subtotal is `menuTotal + addonTotal`. Nothing else — no tax line, no service charge, no delivery fee. |
+| **BR-2.2** | The cart total is the plain sum of item subtotals. No basket-level discount exists. |
+| **BR-2.3** | Prices are never negative and never zero once at least one date is chosen. |
+| **BR-2.4** | No VAT/PPN is shown, added, or mentioned anywhere. **(inferred: prices are gross)** |
+| **BR-2.5** | The WhatsApp message quotes the computed total as final. Fees the page describes but does not calculate (BR-9.4, BR-10.3) are therefore **missing from the quoted total**. |
 
-## BR-5 — Catering Kantor
+---
+
+## BR-3 — The daily-subscription pricing engine
+
+This is the heart of the system. The customer selects a **set of dates** on a
+calendar; the engine classifies that set into one of six tiers and applies the
+matching per-day rate. It applies to all four Daily Order cards.
+
+### Inputs
+
+`dates` — an array of `YYYY-MM-DD` strings, always kept **sorted and unique**.
+Derived values:
+
+- `n` — how many dates are selected.
+- `consecutive` — true when every adjacent pair is exactly one calendar day apart.
+- `span` — `last − first + 1` in days (the outer window, gaps included).
+
+### The six tiers
+
+| Tier key | Label on the page | Rate used |
+|----------|-------------------|-----------|
+| `daily` | Harian | `daily` |
+| `weekly` | Mingguan (min. 5 hari) | `weeklyPerDay` |
+| `monthly` | Bulanan (min. 20 hari) | `monthlyPerDay` |
+| `flexi-weekly` | Flexi Mingguan | `flexiWeeklyPerDay` |
+| `flexi-monthly` | Flexi Bulanan | `flexiMonthlyPerDay` |
+| `flexi` | Flexi (tanggal acak) | `daily` — **full price** |
+
+### The classification, in evaluation order
+
+The engine tests these in sequence and stops at the first match. **Order
+matters**: several conditions overlap.
+
+| ID | Condition | Result |
+|----|-----------|--------|
+| **BR-3.1** | `consecutive` and `n ≥ 20` | **Bulanan** |
+| **BR-3.2** | `consecutive` and `5 ≤ n ≤ 14` and the run **crosses a calendar-week boundary** | **Flexi Mingguan** |
+| **BR-3.3** | `consecutive` and `14 < n < 20` | **Flexi — full daily rate** |
+| **BR-3.4** | `consecutive` and `n ≥ 5` (so 5–14 days inside one calendar week) | **Mingguan** |
+| **BR-3.5** | `consecutive` and `n < 5` | **Harian** |
+| **BR-3.6** | not consecutive, but a **clean 20+ day weekday routine** (see BR-3.11) | **Bulanan** |
+| **BR-3.7** | not consecutive, but a **weekly routine spanning two weeks** (see BR-3.12) | **Mingguan** |
+| **BR-3.8** | not consecutive, `n ≥ 20`, `span ≤ 45` | **Flexi Bulanan** |
+| **BR-3.9** | not consecutive, `5 ≤ n < 20` (any span) | **Flexi Mingguan** |
+| **BR-3.10** | anything else (scattered, fewer than 5 days) | **Flexi — full daily rate** |
+
+### The two "routine" rules
 
 | ID | Rule |
 |----|------|
-| **BR-5.1** | Priced on a matrix of **jenis** (`reguler` / `healthy`) × **periode** (`mingguan` / `bulanan`) × **pax tier**. |
-| **BR-5.2** | Pax tiers: `5–10`, `11–20`, `21–50`, `51–100`, `101+`. |
-| **BR-5.3** | Committed days per period: **Mingguan = 5 days**, **Bulanan = 20 days**. |
-| **BR-5.4** | `healthy` costs exactly **Rp 10.000 more per pax per day** than `reguler` at every tier and period. |
-| **BR-5.5** | `bulanan` is exactly **Rp 1.000 less per pax per day** than `mingguan` at every tier. |
-| **BR-5.6** | Minimum **5 pax per day**. |
-| **BR-5.7** | **Free fruit every Friday** is included with Catering Kantor. Stated on the card; no price impact. |
+| **BR-3.11** | **Weekday routine → Bulanan.** A non-consecutive selection qualifies when: every date falls on Mon–Fri *or* every date falls on Mon–Sat; `n ≥ 20`; every gap between adjacent dates is 1 or 3 days (Mon–Fri) or 1 or 2 days (Mon–Sat); and `span ≤ 31`. This is the ordinary "weekdays only for a month" customer, who would otherwise be penalised for skipping weekends. |
+| **BR-3.12** | **Two-week routine → Mingguan.** When BR-3.11 does not apply: every date falls on Mon–Fri or Mon–Sat; `span ≤ 14`; and **at least one Monday-anchored calendar week contains 5 or more of the selected dates**. Gap shape is *not* checked here. A customer who starts mid-week and continues into the next week is a real weekly customer, not a one-off. |
 
-## BR-6 — Add-ons
+Worked example of BR-3.12, taken from the source's own comment:
+`18, 19, 20, 21, 24 Aug` = 5 days, but week 17–23 holds only 4 and week 24–30
+holds only 1 → **no week reaches 5** → stays Flexi.
+`18, 19, 20, 21, 24, 26, 27, 28, 29 Aug` = 9 days, and week 24–30 holds 5
+(24, 26, 27, 28, 29) → **the whole 9-day order** gets Mingguan.
 
-| ID | Rule |
-|----|------|
-| **BR-6.1** | Add-ons are per-item, priced **per pax per selected day**. |
-| **BR-6.2** | An add-on may be **restricted to specific weekdays**. It then applies only to selected dates falling on those weekdays. |
-| **BR-6.3** | Day codes are ISO-style digits: `1`=Mon … `6`=Sat. `Extra Ikan` and `Extra Seafood` are Wednesday-only (`3`); `Extra Daging` is Thursday-only (`4`). |
-| **BR-6.4** | By default a checked add-on applies to **every eligible date**. |
-| **BR-6.5** | The customer may **opt an add-on out of individual days** via day chips. Once touched, that choice is remembered and only pruned as dates change. |
-| **BR-6.6** | If no selected date matches an add-on's allowed weekdays, the add-on is unavailable and cannot contribute. |
-| **BR-6.7** | Regular Catering additionally offers a **Wednesday protein choice** — `Rabu: Ayam` or `Rabu: Seafood (termasuk ikan)` — as a free either/or, not a paid add-on. |
-| **BR-6.8** | On **all Flexi tiers**, `Extra Daging (khusus Kamis)` is capped at **one portion per each multiple of 5 pax** (12 pax → 2 portions). Stated on the page as policy; **not enforced by the calculator**. |
-
-## BR-7 — Delivery time and the ordering cut-off
+### Week boundaries
 
 | ID | Rule |
 |----|------|
-| **BR-7.1** | Five delivery windows: `Pagi (06.00–07.00)`, `Pagi (07.00–09.00)`, `Siang (12.00)`, `Sore (18.00)`, `Request (dikonfirmasi admin)`. |
-| **BR-7.2** | The default when nothing is chosen is **`Siang (12.00)`**. |
-| **BR-7.3** | Cut-offs apply **only when the selected dates include today**. For future-only dates every window is enabled. |
-| **BR-7.4** | When today is included: **both Pagi windows are always disabled** — same-day morning delivery is never possible. |
-| **BR-7.5** | `Siang (12.00)` is available same-day only **before 09:00**. |
-| **BR-7.6** | `Sore (18.00)` is available same-day only **before 12:00**. |
-| **BR-7.7** | `Request (dikonfirmasi admin)` is **never disabled** — it is the always-open escape hatch, resolved by the admin. |
-| **BR-7.8** | If the customer's chosen window becomes disabled, selection **falls back to the first still-enabled window**. It is never left empty. |
-| **BR-7.9** | The clock used is the **browser's local time**, not a server or Asia/Jakarta time. A customer with a wrong device clock or in another timezone gets the wrong cut-off. |
+| **BR-3.13** | A calendar week runs **Monday → Sunday**. A date's week is identified by its Monday: `offset = (dow === 0 ? 6 : dow − 1)`. Sunday belongs to the week that *started* six days earlier. |
 
-**BR-7.9 is a real defect for a production rebuild**, not a mockup quirk — see
-[[09-open-questions]]. Note also that BR-7.3–7.8 can only fire on cards where
-today is selectable, which BR-2.5 largely forecloses.
+### Notes on BR-3.3
+
+A consecutive run of 15–19 days pays the **full daily rate** — more per day than
+a 5-day order and more than a 20-day one. The source marks this as a deliberate
+revision ("Flexi Mingguan cuma berlaku untuk dipakai sampai 14 hari"), so it is
+intentional, but it is a cliff a customer can fall off by extending an order.
+Raised as Q-7 in [[09-open-questions]].
+
+---
+
+## BR-4 — Daily-subscription totals
+
+| ID | Rule |
+|----|------|
+| **BR-4.1** | Default: `total = tierRate × n × pax`. |
+| **BR-4.2** | `pax` is clamped to a minimum of 1. |
+| **BR-4.3** | The tier rate is per **person per day**, never per order. |
+| **BR-4.4** | No proration, no rounding to package boundaries: 23 days at the Bulanan rate costs 23 × rate, not one "month". |
+
+---
+
+## BR-5 — Regular Catering's pax table
+
+Regular Catering alone carries a `data-pax-table`: an official per-group price
+for 1–5 pax that replaces the flat per-pax rate.
+
+| ID | Rule |
+|----|------|
+| **BR-5.1** | The table applies **only** on the strict `weekly` and `monthly` tiers. Every Flexi tier and Harian falls back to `rate × n × pax`. |
+| **BR-5.2** | The table has two variants selected by the **Dengan Nasi / Tanpa Nasi** toggle. Dengan Nasi is the default. |
+| **BR-5.3** | Table values are the **per-day total for the whole group**, not per person. |
+| **BR-5.4** | For `pax > 5`: `dayTotal = round(table[5] / 5) × pax`. The 5-pax group rate is extended linearly; the discount stops deepening. |
+| **BR-5.5** | The displayed "effective rate" is `round(dayTotal / pax)`. |
+| **BR-5.6** | The toggle is cosmetic on every other tier — it changes the item's label but not its price. **(inferred from BR-5.1)** |
+
+Actual values are in [[04-pricing-catalogue]].
+
+---
+
+## BR-6 — Add-ons (Tambahan)
+
+| ID | Rule |
+|----|------|
+| **BR-6.1** | An add-on costs `price × pax × dayCount`, on top of the menu subtotal. |
+| **BR-6.2** | `dayCount` is the number of selected dates the add-on actually applies to — **not** the number of dates in the order. |
+| **BR-6.3** | An add-on may be restricted to certain weekdays via `data-restrict-days` (digit string, `0` = Sunday … `6` = Saturday). |
+| **BR-6.4** | A restricted add-on is **auto-disabled and force-unchecked** whenever no selected date falls on an allowed weekday. |
+| **BR-6.5** | On the four Daily Order cards, a checked add-on renders a **per-day chip picker**. It defaults to every eligible date; the customer can tap individual days off. |
+| **BR-6.6** | Once the customer edits that picker manually, the choice is remembered and only pruned as dates are removed — it never silently re-expands. |
+| **BR-6.7** | Unchecking an add-on discards its day selection entirely. |
+| **BR-6.8** | **The Flexi meat cap.** On any Flexi tier (`flexi`, `flexi-weekly`, `flexi-monthly`), *Extra Daging (khusus Kamis)* is charged for `floor(pax / 5)` portions rather than `pax` — at most one portion per 5 pax. Below 5 pax it charges nothing. On Harian, Mingguan and Bulanan it charges per full pax as normal. |
+| **BR-6.9** | Add-on rates are flat rupiah per pax per day. They do not scale with the tier discount. |
+
+### Add-on catalogue — the four Daily Order cards
+
+| Add-on | Price | Allowed weekdays |
+|--------|-------|------------------|
+| Extra Ayam | +Rp15,000 | Mon, Tue, Wed, Fri, Sat (`12356`) |
+| Extra Telur | +Rp5,000 | any |
+| Extra Ikan (khusus Rabu) | +Rp15,000 | Wed (`3`) |
+| Extra Seafood (khusus Rabu) | +Rp20,000 | Wed (`3`) |
+| Extra Daging (khusus Kamis) | +Rp20,000 | Thu (`4`) — and see BR-6.8 |
+| Extra Sayur | +Rp5,000 | Mon–Sat (`123456`) |
+| Extra Lauk Pendamping | +Rp5,000 | Mon–Sat (`123456`) |
+| Ganti Nasi Merah | +Rp5,000 | Mon–Sat (`123456`) |
+| Packaging ganti Thinwall | +Rp2,000 | any |
+
+### Add-on catalogue — Nasi Bento and Catering Kantor
+
+Both carry a nine-item list. It differs from the list above:
+
+| Add-on | Price | Restriction |
+|--------|-------|-------------|
+| Ganti Thinwall | +Rp2,000 | none |
+| Extra Protein Ayam | +Rp15,000 | none |
+| Extra Telur | +Rp5,000 | none |
+| Extra Protein Ikan | +Rp15,000 | **Nasi Bento:** none · **Kantor:** Wed (`3`) |
+| Extra Protein Seafood | +Rp20,000 | none |
+| Extra Daging (khusus Kamis) | +Rp20,000 | Thu (`4`) |
+| Extra Sayur | +Rp5,000 | none |
+| Extra Lauk Pendamping | +Rp5,000 | none |
+| Ganti Nasi Merah | +Rp5,000 | none |
+
+| ID | Rule |
+|----|------|
+| **BR-6.10** | Nasi Bento and Catering Kantor have **no per-day chip picker**. A checked add-on applies to every eligible date, all or nothing. |
+| **BR-6.11** | BR-6.8's Flexi meat cap does **not** apply to Nasi Bento or Kantor — neither has Flexi tiers. |
+| **BR-6.12** | Nasi Kuning and Paket Acara have **no add-ons at all**. |
+
+---
+
+## BR-7 — Dates and delivery cut-offs
+
+| ID | Rule |
+|----|------|
+| **BR-7.1** | Dates are picked on an inline month calendar. Multiple dates per card, in any pattern. |
+| **BR-7.2** | Dates strictly before today are always disabled. |
+| **BR-7.3** | **Today is selectable until 12:00 local time.** After that its calendar cell is disabled too. |
+| **BR-7.4** | Delivery-slot availability for *today* depends on the clock: **Pagi (both windows) is never available same-day**; **Siang (12.00)** closes at **09:00**; **Sore (18.00)** closes at **12:00**; **Request (dikonfirmasi admin)** stays open regardless. |
+| **BR-7.5** | If the customer's chosen slot becomes disabled, selection falls back to the first still-enabled slot — silently. |
+| **BR-7.6** | Healthy Meal and Bulking Extra **never** deliver on Sunday. Every Sunday cell is disabled on those two cards, whatever the date. |
+| **BR-7.7** | Regular Catering and Kids Meal *may* be delivered on Sunday, but the menu differs: **lunch = Nasi Goreng Kampung**, **dinner = as set by Thenie**. A warning appears when a Sunday is selected. |
+| **BR-7.8** | There is **no upper bound** on how far ahead a customer may order. |
+| **BR-7.9** | Every date and cut-off calculation uses `new Date()` — the **customer's device clock**, in the device's own timezone. |
+| **BR-7.10** | The cut-off is re-applied at "+ Tambah ke Order" time on the tier-based and Kantor cards, in case the clock crossed 09:00 or 12:00 while the card sat open. The four Daily Order cards do not re-check. |
+
+> **BR-7.3 contradicts the page's own copy.** The Pesan Online home tab states
+> *"Order untuk hari ini sudah tidak bisa dipilih — minimal untuk besok"*, and a
+> source comment agrees ("Same-day ordering is closed"). The shipped code does
+> not implement that. Raised as Q-21 in [[09-open-questions]].
+
+### Date-filling helpers (Daily Order only)
+
+| ID | Rule |
+|----|------|
+| **BR-7.11** | **5 Hari / 6 Hari** anchor to the *coming* Monday and fill forward. If that Monday is today or earlier, they skip to the following Monday — these packages are for a week that has not started. |
+| **BR-7.12** | **20 Hari (Sen–Jum)** and **20 Hari (Sen–Sab)** start at **tomorrow** and walk forward, skipping the excluded weekdays, until 20 dates are collected. |
+| **BR-7.13** | **Isi Rentang** (from–to) fills every calendar day in the range, capped at **60 days**. Reversed ranges are swapped. |
+| **BR-7.14** | Isi Rentang is **hidden** on Healthy Meal and Bulking Extra — a raw range fill would include the Sundays those plans cannot deliver. |
+| **BR-7.15** | Quick-fill and range-fill **replace** the current selection; they never merge into it. |
+
+---
 
 ## BR-8 — Payment
 
 | ID | Rule |
 |----|------|
-| **BR-8.1** | Payment is **manual bank transfer**. Nothing is charged online. |
-| **BR-8.2** | Account: **BCA**, a.n. **R Bg Andreas Kurnianto**, No. Rek **8660-281-402**. |
-| **BR-8.3** | The transfer description must read `Catering atas nama …` with the customer's name. |
-| **BR-8.4** | Bank details are repeated in the outgoing WhatsApp message, not only on the page. |
+| **BR-8.1** | Payment is **bank transfer only**. No card, no e-wallet, no QRIS, no cash-on-delivery. |
+| **BR-8.2** | The account is **BCA 8660-281-402**, a/n **R Bg Andreas Kurnianto** — a personal name, not a company. |
+| **BR-8.3** | Customers must write `"Catering atas nama ..."` in the transfer description. |
+| **BR-8.4** | The customer must confirm the transfer to the admin manually. Nothing detects payment. |
+| **BR-8.5** | The site never sees, handles, or verifies money. |
 
-## BR-9 — Schedule changes
+---
 
-| ID | Rule |
-|----|------|
-| **BR-9.1** | Moving a delivery to another date **in the same week** is **free**. |
-| **BR-9.2** | Moving it to a **different week** costs **Rp 10.000 per pax**. |
-| **BR-9.3** | Continuing to a full package incurs **no additional charge**. |
-| **BR-9.4** | These are stated on the page as policy text. **The page does not implement them** — there is no reschedule function. They are handled by the admin over WhatsApp. |
-
-## BR-10 — Delivery charge
+## BR-9 — Changes and cancellation
 
 | ID | Rule |
 |----|------|
-| **BR-10.1** | Delivery is **free** when the order is for **at least 5 days** *and* the menu is at least **Rp 26.000/day**. The Menu-tab poster words the same offer as *"free ongkir, min. order 1 minggu"*. |
-| **BR-10.2** | Below either threshold — fewer than 5 days, or under Rp 26.000/day — delivery costs **Rp 5.000 per delivery**, across all categories. |
-| **BR-10.3** | **Not implemented in the page.** It is displayed as policy text and never added to any total. The WhatsApp message the admin receives therefore under-states the amount due for small orders. |
+| **BR-9.1** | All changes must be reported by **H-1, 17:00 WIB**. Past that, Thenie may refuse. |
+| **BR-9.2** | Orders **cannot be cancelled on the day of delivery**. |
+| **BR-9.3** | Moving a date **within the same calendar week** is free. |
+| **BR-9.4** | Moving a date **to a different week** costs **Rp10,000/pax** — waived if the customer continues into a full following package. |
+| **BR-9.5** | A Mingguan package covers 7 days within one week; a Bulanan package covers 30 days from the payment date. |
+| **BR-9.6** | Requests outside the published menu, and red-rice substitution outside the add-on, cost **+Rp5,000/pax**, confirmed by the admin. |
+| **BR-9.7** | **None of BR-9.4 or BR-9.6 is implemented in the calculator.** They are policy text only; the quoted total ignores them. |
 
-## BR-11 — Delivery areas
+---
 
-| ID | Rule |
-|----|------|
-| **BR-11.1** | Nine areas, identical on every card: Gading Serpong, Karawaci, BSD, Alam Sutera, Medang, Villa Melati Mas, Park Serpong, Golden Stone, Lainnya. |
-| **BR-11.2** | Area is a required per-item field. |
-| **BR-11.3** | `Lainnya` is accepted with no follow-up prompt and no surcharge. **(inferred: resolved by the admin.)** |
-
-## BR-12 — Order submission
+## BR-10 — Delivery
 
 | ID | Rule |
 |----|------|
-| **BR-12.1** | Submission opens a **WhatsApp deep link** to `wa.me/62818100523` with the whole order pre-filled as message text. |
-| **BR-12.2** | The order is **not sent by the page**. The customer must press send inside WhatsApp. An abandoned message means a lost order, invisible to the business. |
-| **BR-12.3** | If every item shares the same recipient, delivery time and notes, those appear **once** in a combined block. If any differs, **every item carries its own** recipient lines. |
-| **BR-12.4** | Message lines are percent-encoded individually so newlines survive as real `%0A` line breaks. |
+| **BR-10.1** | Delivery windows: **Pagi 06.00–07.00**, **Pagi 07.00–09.00**, **Siang 12.00** (default), **Sore 18.00**, **Request (dikonfirmasi admin)**. |
+| **BR-10.2** | Pagi 06.00–07.00 is restricted to **Lippo Karawaci & Amarillo**. Pagi 07.00–09.00 to **PHG, BPK Penabur, and parts of BSD**, subject to admin confirmation. These restrictions are **displayed but never enforced**. |
+| **BR-10.3** | Free delivery requires **≥ 5 days** *and* a menu of **≥ Rp26,000/day**. Otherwise **+Rp5,000 per delivery**, across all categories. |
+| **BR-10.4** | **BR-10.3 is not implemented.** No delivery charge is ever added to any total. |
+| **BR-10.5** | Free cut fruit every **Friday** on Catering Kantor packages. |
+| **BR-10.6** | Free delivery is also stated on the Harga page as "minimum 1 minggu (5 hari)" — consistent with BR-10.3's day count, silent on the rupiah floor. |
 
-Related: [[04-pricing-catalogue]] · [[05-order-flow-and-whatsapp]] · [[09-open-questions]]
+---
+
+## BR-11 — Service area
+
+| ID | Rule |
+|----|------|
+| **BR-11.1** | The Area dropdown offers exactly nine values: Gading Serpong (default), Karawaci, BSD, Alam Sutera, Medang, Villa Melati Mas, Park Serpong, Golden Stone, **Lainnya**. |
+| **BR-11.2** | Area is **never** used in pricing. It is passed through to the WhatsApp message as text. |
+| **BR-11.3** | **Lainnya** is accepted with no follow-up question and no surcharge. |
+| **BR-11.4** | The marketing pages name a different set — Gading Serpong, BSD, Karawaci, Alam Sutera, Medang, plus Bintaro/Pondok Aren/Ciledug as expansion. The order form's list and the marketing list do not match. |
+
+---
+
+## BR-12 — Validation and submission
+
+| ID | Rule |
+|----|------|
+| **BR-12.1** | Recipient details live **per item**, not at checkout. One cart can carry several recipients at several addresses. |
+| **BR-12.2** | Adding an item requires **Nama Penerima**, **No. WhatsApp**, and **Alamat**. All three are presence-checked only. |
+| **BR-12.3** | Tier-based cards (Nasi Bento, Nasi Kuning, Paket Acara) additionally require **at least one delivery date**. Catering Kantor requires a **Tanggal Mulai**. |
+| **BR-12.4** | Daily Order cards enforce dates by disabling "+ Tambah ke Order" until at least one is picked. |
+| **BR-12.5** | **No format validation exists anywhere.** Phone numbers, names and addresses are accepted as typed — no pattern, no length cap, no normalisation, no sanitisation. |
+| **BR-12.6** | Checkout requires only that the cart is non-empty. |
+| **BR-12.7** | After a successful add, the card **resets itself to blank** so the next item starts fresh. |
+| **BR-12.8** | **Reset / Ulang Order dari Awal** always asks for confirmation — even with an empty cart, because a card may hold unsaved picks. |
+| **BR-12.9** | Submitting opens `wa.me/62818100523` in a new tab with the message pre-filled. The site's involvement ends there. |
+
+---
+
+## BR-13 — Catering Kantor
+
+| ID | Rule |
+|----|------|
+| **BR-13.1** | Minimum **5 pax**. |
+| **BR-13.2** | Two grades — **Reguler** and **Healthy Catering** — and two periods — **Mingguan (5 days)** and **Bulanan (20 days)**. |
+| **BR-13.3** | `total = rate × pax × days`, where `days` is 5 or 20 by period. |
+| **BR-13.4** | The rate comes from a five-band pax table: 5–10, 11–20, 21–50, 51–100, 101–200. |
+| **BR-13.5** | Above 200 pax the top band applies — `max` is `99999`, so there is no upper limit and no "contact us" path. |
+| **BR-13.6** | The customer picks **one start date**; the period is a fixed day count walked forward from it. |
+| **BR-13.7** | That walk-forward **skips Saturday and Sunday**. A Bulanan package is therefore 20 *weekdays* — four calendar weeks. |
+| **BR-13.8** | Weekday-restricted add-ons count only the Rabu/Kamis that fall inside that computed range. |
+| **BR-13.9** | Healthy Catering is **exactly Rp10,000/pax/day above** Reguler in every band and both periods. |
+
+---
+
+## BR-14 — Tier-based cards (Nasi Bento, Nasi Kuning, Paket Acara)
+
+| ID | Rule |
+|----|------|
+| **BR-14.1** | `total = tierPrice × qty × numberOfDates`. Each selected date is a **separate full delivery** of the same quantity. |
+| **BR-14.2** | The tier is chosen by `qty` alone. Number of dates never affects the unit price. |
+| **BR-14.3** | `qty` is clamped up to the package minimum: **20** boxes (Nasi Bento), **10** boxes (Nasi Kuning), **25** pax (Paket Acara). |
+| **BR-14.4** | Top tiers are unbounded (`max: 99999`). |
+| **BR-14.5** | Paket Acara's tiers are labelled explicitly (`25-50 pax`, `>50 pax`); the others derive labels from their bounds. |
+| **BR-14.6** | Paket Acara publishes each package's composition, but the customer **cannot choose menu items in the form** — they are told to discuss it with the admin in the notes. |
+
+---
+
+## BR-15 — Menu rotation
+
+| ID | Rule |
+|----|------|
+| **BR-15.1** | Weekly menus are **hard-coded markup**, not data. Two weeks exist: **week 34 (17–21 Aug 2026)** and **week 35 (24–28 Aug 2026)**. |
+| **BR-15.2** | Menus are published Monday–Friday only. |
+| **BR-15.3** | Thursday is the meat day, marked ⭐ in every plan's menu list. |
+| **BR-15.4** | Bulking Extra uses the **same menu and the same photographs** as Healthy Meal, with the protein portion doubled. |
+| **BR-15.5** | Selecting a date outside the two published weeks is allowed, and no menu is shown for it. |
+| **BR-15.6** | **Three calorie figures disagree.** The Daily Order card text says Healthy Meal is **430–500 kcal**. The Menu-tab poster's header says **"~ 550-590 KKAL / PORSI"**. And the five per-day totals printed on that same poster read **±455, ±455, ±465, ±485, ±465 kkal** — matching the card text, and contradicting the poster's own header. Verified by decoding and reading the image. |
+
+Related: [[04-pricing-catalogue]] · [[05-order-flow-and-whatsapp]] · [[09-open-questions]] · `../tests/README.md`

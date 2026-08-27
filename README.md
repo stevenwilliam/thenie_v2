@@ -1,82 +1,108 @@
 # thenie_v2
 
-An **exact, byte-for-byte mirror** of the deployed Thenie Healthy Catering
-ordering mockup, plus the documentation reconstructed from it and a runbook for
-deploying it to the existing Ubuntu/Nginx server.
-
-- **Source of truth:** <https://thenie-catering-order.netlify.app>
-- **Captured:** 2026-08-22
-- **Mirror:** [`site/index.html`](site/index.html) — SHA-256 `9d4cfefba381b6a8c3adbc822281e701c7b8cca98d1e7d40b5ac1ccafbb0df49`
-
-## The one rule for `site/`
-
-`site/index.html` is a **verbatim capture**. Nothing in it has been added,
-changed, reformatted, minified, prettified or removed — not one byte. Do not
-"tidy" it. If the upstream page changes, re-capture it and record the new hash
-in [`docs/07-fidelity-and-verification.md`](docs/07-fidelity-and-verification.md);
-never hand-edit the mirror to match.
-
-Every observation in `docs/` was read *out of* that file. The documentation
-describes the mockup; it does not modify it.
-
-**Additions go in `site/overlays/`, never in the mirror.** `scripts/build-site.sh`
-stitches mirror + overlays into `dist/index.html`, and that built file is what
-gets deployed. Today there is one overlay: the floating WhatsApp button
-([`docs/14-whatsapp-fab.md`](docs/14-whatsapp-fab.md)).
-
-## Layout
+A byte-exact mirror of the **Thenie Healthy Catering** website, the
+documentation reconstructed from it, and everything needed to deploy it.
 
 ```
-site/index.html    the mirror — 4,615,031 bytes, self-contained, zero external requests
-site/overlays/     our additions, injected at build time (WhatsApp button)
-dist/index.html    build output — what the server serves (git-ignored)
-docs/              documentation reconstructed from the mirror (also an Obsidian vault)
-docs/screenshots/  rendered evidence — home, menu, order, catering kantor
-scripts/           build-site.sh — mirror + overlays → dist/
-                   verify-mirror.sh — re-prove the capture against disk and upstream
-tests/             pricing-engine tests, run against code extracted from the mirror
+site/index.html        the capture — NEVER edited, sha256-pinned
+site/overlays/         our changes, stitched in at build time
+scripts/build-site.sh  mirror + overlays → dist/index.html
+scripts/verify-mirror.sh  proves the mirror still matches upstream
+scripts/contrast.py    WCAG contrast for the palette — the source of docs/06's table
+dist/index.html        what gets deployed (git-ignored — rebuild after pull)
+docs/                  the reconstructed specification
+tests/                 pricing-engine tests, run against the real shipped code
 ```
 
-## Tests
+## The one rule
+
+> **`site/index.html` is never edited.**
+
+It is a byte-exact copy of the live page. Everything the documentation, the
+tests and the deployment depend on is derived from it by reading. Editing it
+turns all of that into a description of a file that exists nowhere else.
+
+The rule is enforced, not merely stated: `build-site.sh` hashes the mirror
+before doing anything and refuses to run on a mismatch.
+
+Changes go in `site/overlays/` — see [docs/14-overlays.md](docs/14-overlays.md).
+
+## Quick start
 
 ```bash
+# check the mirror is intact, and still matches upstream
+./scripts/verify-mirror.sh
+
+# build the deployable page
+./scripts/build-site.sh          # → dist/index.html
+
+# run the pricing tests against the real shipped code
 node --test tests/
+
+# re-check the palette's contrast ratios
+python3 scripts/contrast.py
+
+# look at it
+python3 -m http.server 8080 --directory dist
 ```
 
-31 tests, no dependencies. They extract the real `analyze()` out of
-`site/index.html` at run time and assert the documented pricing rules against
-it — see [`tests/README.md`](tests/README.md).
+## What the site is
+
+One HTML file, 6.7 MB, no backend. Two things welded together:
+
+- **A marketing site** — Beranda, Tentang Kami, Menu & Layanan, Harga, Kontak.
+- **An order application** — Pesan Online: eight order cards, calendar-driven
+  date selection, a six-tier pricing engine, add-ons, a cart, and a WhatsApp
+  checkout.
+
+Navigation between them is client-side on the URL fragment. Nothing is stored
+anywhere — an order is assembled in browser memory and handed to WhatsApp as a
+pre-filled message.
+
+## Current state
+
+| | |
+|---|---|
+| Capture | **2026-08-27** |
+| Size | 6,983,019 B |
+| SHA-256 | `b66ed30212d3cb3ffe00c1385ea9a23996d8611cb3bed40a288fed99b6ed9689` |
+| Source | `https://thenie-catering-order.netlify.app/` |
+| Verified identical to live | ✅ (after stripping Netlify's injected banner) |
+| Overlays | 1 — `fab-clearance.html` |
+| Tests | 31 passing |
+| Deploy target | `thenie.id` on the existing Ubuntu + Nginx server |
 
 ## Documentation
 
-Start at [`docs/00-index.md`](docs/00-index.md).
+Start at [docs/00-index.md](docs/00-index.md).
 
-## Opening the docs in Obsidian
-
-`docs/` is a plain folder of Markdown with `[[wikilinks]]`, so it *is* a vault.
-In Obsidian: **Open folder as vault** → select `/home/dev/projects/thenie_v2/docs`.
-No account, no sync subscription, no login required.
-
-## Building
-
-```bash
-./scripts/build-site.sh
-```
-
-Writes `dist/index.html` — the mirror with every overlay in `site/overlays/`
-injected before `</body>`. It re-verifies the mirror's SHA-256 first and refuses
-to build from a modified capture.
-
-## Running it locally
-
-```bash
-./scripts/build-site.sh
-python3 -m http.server 8080 --directory /home/dev/projects/thenie_v2/dist
-```
-
-Then open <http://localhost:8080>. Serve `site/` instead to see the pristine
-mockup without our additions.
+| | |
+|---|---|
+| [01](docs/01-product-overview.md) | What the product is |
+| [02](docs/02-business-rules.md) | Every rule, with `BR-x.y` IDs |
+| [03](docs/03-site-structure.md) | Pages, tabs, cards |
+| [04](docs/04-pricing-catalogue.md) | Every price |
+| [05](docs/05-order-flow-and-whatsapp.md) | Cart and the WhatsApp handoff |
+| [06](docs/06-design-system.md) | Tokens, components, measured contrast |
+| [07](docs/07-fidelity-and-verification.md) | Proof the mirror is exact |
+| [08](docs/08-technical-inventory.md) | What it is made of |
+| [09](docs/09-open-questions.md) | What it does not answer |
+| [13](docs/13-production-deployment-runbook.md) | **Deploy it** |
+| [14](docs/14-overlays.md) | The overlay mechanism |
 
 ## Deploying
 
-See [`docs/13-production-deployment-runbook.md`](docs/13-production-deployment-runbook.md).
+Already set up? The whole job is three commands on the server:
+
+```bash
+cd /opt/thenie_v2 && git pull
+./scripts/build-site.sh
+sudo cp dist/index.html /var/www/thenie/index.html
+```
+
+**Do not skip the build.** `dist/` is git-ignored, so `git pull` never brings
+it. Skipping the build silently publishes a stale file.
+
+First time, or changing anything about the server, DNS or TLS: read
+[docs/13-production-deployment-runbook.md](docs/13-production-deployment-runbook.md).
+Nothing in the 2026-08-27 re-capture requires reconfiguring any of it.

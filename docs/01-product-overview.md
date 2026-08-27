@@ -2,106 +2,120 @@
 
 ## What it is
 
-A **single-page, mobile-first ordering front end** for Thenie Healthy Catering,
-a meal-catering business operating in the **Tangerang / Serpong** corridor west
-of Jakarta. The customer browses menus, builds an order across one or more
-product families, fills in recipient details, and sends the finished order to
-the business **over WhatsApp**.
+**Thenie Healthy Catering** is a catering business in Gading Serpong,
+Tangerang, Indonesia. This repository holds a byte-exact capture of its website:
+a single HTML file that is both the company's marketing site and its
+self-service ordering tool.
 
-The interface language is **Indonesian** (`<html lang="id">`). There is no
-language switcher and no English variant.
+The entire site is in Indonesian. No language switch exists.
 
-## Brand and trust signals
+## The business, as the site tells it
 
-| Element | Value |
-|---------|-------|
-| **Name** | Thenie Healthy Catering |
-| **Tagline** | *"Makan sehat, hidup lebih kuat."* |
-| **Logo** | Circular maroon badge reading **Thenie · Food & Coffee · Restaurant** (artwork only — the words exist in the image, not in the markup) |
-| **Halal** | **Bersertifikat Halal** — registered with Halal Indonesia (**BPJPH**), certificate **ID36210079132750826**, displayed prominently at the top of Home |
-| **Dietary claim** | No coconut milk, nothing deep-fried, no flour, minimal oil |
-| **Contact** | WhatsApp **0818-100-523** (`+62 818 100 523`) |
+| Fact | Value | Where it is stated |
+|------|-------|--------------------|
+| Founded | Gidae restaurant 2020 → **Thenie Restaurant** 2021 → catering 2023 | Beranda, Tentang Kami timeline |
+| Base of operations | Gading Serpong | Tentang Kami, Kontak |
+| Active service area | BSD · Karawaci · Alam Sutera · Medang | Tentang Kami |
+| Expansion area | Bintaro · Pondok Aren · Ciledug | Tentang Kami |
+| Current scale | 2,000+ portions/week (Beranda) · 2,500–3,000/week "Skala 2026" (Tentang Kami) | both pages |
+| Events handled | 20+ | Beranda stats strip |
+| Menu variants | 60+ | Beranda stats strip |
+| Halal certification | BPJPH, No. **ID36210079132750826** | Pesan Online → Home tab |
+| WhatsApp | **0818-100-523** (`62818100523`) — primary | everywhere |
+| WhatsApp | 0817-771-123 (`62817771123`) — Kontak page only | Kontak |
+| Email | thenie.resto@gmail.com | Kontak, footer |
+| Instagram | @thenie.id | Kontak, footer |
+| Bank | BCA **8660-281-402**, a/n R Bg Andreas Kurnianto | checkout, Pesan Online home |
 
-The header repeats the served areas as a strapline: *Order online →
-konfirmasi via WhatsApp • Gading Serpong · Karawaci · Alam Sutera · BSD ·
-Melati Mas · Park Serpong.*
+> The two portions-per-week figures (2,000+ and 2,500–3,000) sit on different
+> pages and do not agree. See Q-20 in [[09-open-questions]].
 
-The Halal certificate is the first content block on the page, above even *Cara
-Order* — a deliberate trust-first ordering for the Indonesian market.
+## Who it serves
 
-## Who uses it
+The site sorts customers into three routes, and the Kontak page's quick-chat
+control makes that split explicit:
 
-| Actor | How they use it |
-|-------|-----------------|
-| **Customer** | The only user of this page. Browses, builds a cart, sends via WhatsApp. |
-| **Admin / owner** | Never touches this page. Receives the order as a WhatsApp message on `+62 818 100 523` and processes it manually. |
-
-There is no staff surface, no login, and no account. Every visitor is anonymous
-and every session is independent.
+- **Korporat** — staff lunches for offices, hotels, hospitals, schools. Daily
+  delivery, priced per pax on a sliding scale from 5 to 200 pax.
+- **Personal** — individuals and families. Daily subscriptions, kids' menus,
+  diet plans.
+- **Acara / Event** — buffets and special menus for celebrations, corporate
+  events, and *syukuran*.
 
 ## The five product families
 
-The Order tab is divided into five sub-tabs. These are the product families:
+Everything the business sells falls into one of five families. The Harga page
+prices them; the Pesan Online page sells them.
 
-| # | Family | Sub-tab label | Pricing shape |
-|---|--------|---------------|---------------|
-| 1 | **Daily Order** | 🥗 Daily Order | Subscription rates, four meal types |
-| 2 | **Nasi Bento Box** | 🍱 Nasi Bento Box | Quantity tiers, two packages |
-| 3 | **Catering Kantor** | 🏢 Catering Kantor | Pax × period matrix, five tiers |
-| 4 | **Nasi Kuning** | 🟡 Nasi Kuning | Quantity tiers, one package |
-| 5 | **Paket Acara** | 🍽️ Paket Acara | Pax tiers, four packages A–D |
+### 1. Daily subscriptions (Langganan Harian)
+Four plans, ordered by picking individual dates on a calendar. Price per day
+falls as the commitment grows — this is where the whole pricing engine lives
+([[02-business-rules]], `BR-3.x`).
 
-Daily Order splits further into **four meal types**, each its own order card
-with its own rate table:
+| Plan | Calories | From | Notes |
+|------|----------|------|-------|
+| **Healthy Meal** | 430–500 kcal | Rp35,000/day | No Sunday delivery |
+| **Bulking Extra** | 700–800 kcal | Rp50,000/day | Same menu, protein doubled. No Sunday delivery |
+| **Regular Catering** | — | Rp25,000/day | Has a 1–5 pax price table, and a Dengan/Tanpa Nasi toggle |
+| **Kids Meal** | ±320–375 kcal | Rp20,000/day | Portions and seasoning adjusted for children |
 
-- **Healthy Meal** — the flagship healthy line
-- **Bulking Extra** — larger portions, higher protein
-- **Regular Catering** — the standard adult meal
-- **Kids Meal** — child portions
+### 2. Catering Kantor (office catering)
+For 5+ pax per day. Two grades (Reguler / Healthy Catering) × two periods
+(Mingguan 5 days / Bulanan 20 days), priced across five pax bands from 5–10 up
+to 101–200. Free fruit every Friday.
 
-That gives **eight order cards** in total (4 daily + 4 family-level). Each card
-is self-contained: its own quantity, its own calendar, its own add-ons, its own
-recipient, its own delivery time.
+### 3. Nasi Bento / Nasi Box
+Boxed meals for meetings and gatherings. Two packages (Ayam / Daging), four
+volume tiers from 20 boxes to 200+. Each box: rice, main protein, vegetable,
+side dish, fruit.
 
-## The defining design decision: recipient-per-card
+### 4. Nasi Kuning ("The Wow Experience")
+The signature product — a single package, three volume tiers from 10 to 60+
+boxes. Contents: yellow rice, shredded chicken, sweet peanut-tempeh sambal
+goreng, sliced omelette, fried noodles, potato balado sambal, cucumber.
 
-Most ordering sites collect the customer's name and address **once**, at
-checkout. This one collects them **per order card**.
+### 5. Paket Acara (event buffets)
+Four packages A–D, minimum 25 pax, two price bands (25–50 pax, >50 pax).
+Customers compose the menu from a published list of options across eight
+categories (Nasi, Soup, Protein A/B/C, Lauk Pendamping A/B, Sayur).
 
-The reason is written into the source as a comment: one customer ordering for
-two different people at two different addresses fills each card with that
-person's own details, instead of being forced into a single shared address.
-Checkout is then pure summary and re-confirmation — it re-enters nothing.
+## The kitchen's stated standards
 
-This matters for any future rebuild: the data model is
-**order → many items, each item carrying its own delivery target**, not
-*order → one address → many items*. See [[03-site-structure]] and
-[[05-order-flow-and-whatsapp]].
+Repeated across Beranda, Menu & Layanan and the order app:
 
-## Delivery areas
+- **Tanpa santan** — no coconut milk
+- **Tanpa digoreng** — nothing deep-fried
+- **Tanpa tepung** — no flour coating
+- **Minim minyak** — minimal oil
 
-Nine options, identical on all eight cards:
+And the portion philosophy, stated on Beranda as "Anatomi Satu Porsi Sehat":
 
-Gading Serpong · Karawaci · BSD · Alam Sutera · Medang · Villa Melati Mas ·
-Park Serpong · Golden Stone · **Lainnya** (other)
+| Component | Portion |
+|-----------|---------|
+| Carbohydrate | 100 g red rice / 150 g potato |
+| Animal protein | 100–150 g |
+| Vegetable | minimum 100 g |
+| Side dish | 50 g |
+| **Total energy** | **±400–500 kcal per portion** |
 
-`Lainnya` is a free escape hatch — the page does not ask for a follow-up when
-it is chosen, and does not restrict or surcharge it. **(inferred: out-of-area
-handling is resolved by the admin over WhatsApp.)**
+## The five reasons ("Kenapa Thenie")
 
-## Service restrictions
+Free delivery · 60+ menu variants · affordable · flexible delivery windows
+(morning/noon/evening) · trusted by corporates and schools.
 
-- **Healthy Meal and Bulking Extra do not serve Sundays** (BR-2.6). The other
-  six cards have no weekday restriction.
-- **Same-day ordering is closed** — the earliest date is tomorrow (BR-2.5).
-- **Catering Kantor starts at 5 pax per day** and includes **free fruit every
-  Friday** (BR-5.6, BR-5.7).
+## How an order actually happens
 
-## What it deliberately does not do
+There is no checkout, no payment gateway, and no order database. The site's
+job ends at composing a WhatsApp message:
 
-- No payment. Bank details are **displayed** for manual transfer; nothing is charged.
-- No stock or capacity check. Any quantity on any date is accepted.
-- No order history, no reorder, no saved addresses.
-- No confirmation screen after sending — the customer leaves for WhatsApp.
+1. Customer picks a package and dates on the Pesan Online page.
+2. They fill recipient details **on the menu card itself** — so one order can
+   go to several people at several addresses.
+3. "+ Tambah ke Order" pushes the item into an in-memory cart.
+4. "Kirim Order via WhatsApp" opens `wa.me/62818100523` with the full order
+   pre-typed.
+5. The customer transfers to the BCA account and confirms with the admin.
 
-Related: [[02-business-rules]] · [[08-technical-inventory]] · [[09-open-questions]]
+Full detail in [[05-order-flow-and-whatsapp]].
+
+Related: [[02-business-rules]] · [[03-site-structure]] · [[04-pricing-catalogue]]

@@ -26,10 +26,16 @@ function extractBalanced(src, startIdx) {
 
 function buildAnalyze() {
   const html = fs.readFileSync(MIRROR, 'utf8');
-  const script = html.match(/<script[^>]*>([\s\S]*?)<\/script>/)[1];
+
+  // The page ships more than one inline <script> (the site router/nav first,
+  // then the Order Online app). analyze() lives in the Order app, so pick the
+  // block that actually defines it rather than assuming it is the first one.
+  const script = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)]
+    .map(m => m[1])
+    .find(src => src.includes('function analyze()'));
+  if (script === undefined) throw new Error('no <script> in the mirror defines analyze()');
 
   const idx = script.indexOf('function analyze()');
-  if (idx < 0) throw new Error('analyze() not found in the mirror');
   const analyzeSrc = extractBalanced(script, idx);
 
   // The helpers analyze() closes over, also taken verbatim.
@@ -56,7 +62,10 @@ function buildAnalyze() {
 function readRates() {
   const html = fs.readFileSync(MIRROR, 'utf8');
   const out = {};
-  const re = /data-sub="([^"]+)"[\s\S]{0,400}?data-rates='([^']+)'/g;
+  // Both attributes sit on the same .order-card tag, so match them adjacently:
+  // a looser window would let a card without rates (Nasi Bento, Paket Acara)
+  // borrow the next card's data-rates.
+  const re = /data-sub="([^"]+)"\s+data-rates='([^']+)'/g;
   let m;
   while ((m = re.exec(html)) !== null) {
     out[m[1]] = JSON.parse(m[2].replace(/&quot;/g, '"'));

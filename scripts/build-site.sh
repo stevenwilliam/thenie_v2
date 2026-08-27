@@ -13,7 +13,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MIRROR="$ROOT/site/index.html"
 OVERLAY_DIR="$ROOT/site/overlays"
 OUT="${1:-$ROOT/dist/index.html}"
-MIRROR_SHA="9d4cfefba381b6a8c3adbc822281e701c7b8cca98d1e7d40b5ac1ccafbb0df49"
+MIRROR_SHA="b66ed30212d3cb3ffe00c1385ea9a23996d8611cb3bed40a288fed99b6ed9689"
 
 [ -f "$MIRROR" ] || { echo "FAIL: missing $MIRROR" >&2; exit 1; }
 

@@ -1,130 +1,258 @@
 # 05 — Order flow and the WhatsApp handoff
 
-## The flow end to end
+How an order is assembled, validated, and handed off. The site has no backend,
+so this whole document describes what happens inside one browser tab
+(`BR-1.x` in [[02-business-rules]]).
+
+---
+
+## The flow, end to end
 
 ```
-Home  ─CTA─▶  Order tab ─▶ sub-tab ─▶ card
-                              │
-                              ├─ pick package / type
-                              ├─ set quantity        (clamped to tier minimum)
-                              ├─ pick date(s)        (calendar → chips)
-                              ├─ tick add-ons        (+ per-add-on day chips)
-                              ├─ pick delivery time  (cut-off aware)
-                              ├─ fill recipient      (name, phone, address, area, note)
-                              └─ Tambah ke Order ──▶ VALIDATE ──▶ cart
-                                                        │
-                                     ┌──────────────────┘
-                                     ▼
-                          sticky bar (count + total)
-                                     │  open
-                                     ▼
-                             checkout modal  ── summary only, no new fields
-                                     │  send
-                                     ▼
-                       wa.me/62818100523?text=<encoded order>
-                                     │
-                                     ▼
-                       WhatsApp opens — CUSTOMER MUST PRESS SEND
+   Pesan Online (#order)
+        │
+   ┌────▼──────────────────────────────────────────────┐
+   │ 1. Pick a card                                    │
+   │      Order tab → sub-tab → (Daily) sub-sub-tab    │
+   ├───────────────────────────────────────────────────┤
+   │ 2. Configure it                                   │
+   │      dates · qty/pax · package · add-ons · prefs  │
+   │      → subtotal recomputes on every change        │
+   ├───────────────────────────────────────────────────┤
+   │ 3. Fill the recipient — ON THE CARD               │
+   │      name* · WhatsApp* · address* · area · notes  │
+   │      · delivery window                            │
+   ├───────────────────────────────────────────────────┤
+   │ 4. "+ Tambah ke Order"                            │
+   │      validate → push to cart → flash → RESET card │
+   ├───────────────────────────────────────────────────┤
+   │ 5. Repeat for more items / people / addresses     │
+   ├───────────────────────────────────────────────────┤
+   │ 6. "Lihat Order & Checkout" → summary sheet       │
+   │      review · remove items · add more · reset     │
+   ├───────────────────────────────────────────────────┤
+   │ 7. "Kirim Order via WhatsApp"                     │
+   │      build message → window.open(wa.me/…)         │
+   └────┬──────────────────────────────────────────────┘
+        │
+        ▼   the site's job is over
+   WhatsApp draft — the customer still has to press send
+        │
+        ▼
+   Bank transfer to BCA 8660-281-402, then confirm with the admin
 ```
 
-## Where validation happens
+---
 
-Validation is **front-loaded onto the card**, not the checkout:
+## Why recipient details live on the card
 
-| Stage | Checks |
-|-------|--------|
-| **Tambah ke Order** | Nama, No. HP, Alamat present; at least one date picked; quantity ≥ tier minimum |
-| **Checkout** | Cart is not empty — and nothing else (BR-1.5) |
+The obvious design puts one name/phone/address at checkout. This site puts
+**one set per item**, and the reason is stated in the source: a customer
+ordering for two people at two addresses fills each card with that person's own
+details, instead of placing two separate orders.
 
-By the time an item reaches the cart its recipient data is complete, so checkout
-has nothing left to verify. The send button stays disabled with the hint
-*"Lengkapi dulu: minimal 1 item menu."* while the cart is empty.
+The consequence is that **checkout collects almost nothing**. It is a review
+screen: a list of what is already complete, a grand total, an optional overall
+start date, the terms, and the send button.
 
-**There is no format validation.** No phone-number pattern, no length limits, no
-character restrictions, no address sanity check. A single space passes as a
-name. This is the mockup's weakest point for a rebuild — see
-[[09-open-questions]].
+---
 
-## The item record
+## The cart
 
-Each cart item holds:
+An in-memory array. Each entry:
 
-| Field | Meaning |
-|-------|---------|
-| `sub` | Card / product family (`card.dataset.sub`) |
-| `itemName` | Package or meal type |
-| `qty` | Boxes or pax |
-| `unitPrice` | The resolved tier price |
-| `n` | Number of delivery dates |
-| `total` | `unitPrice × qty × n` (BR-2.1) |
-| `recipient` | `{name, phone, address, area}` |
-| `dtime` | Delivery window |
-| `note` | Free-text note |
-| `addonText` | Rendered add-on summary |
+| Field | Type | Purpose |
+|-------|------|---------|
+| `name` | string | Item title, e.g. `Healthy Meal (Dengan Nasi)` or `Nasi Bento — Paket Ayam` |
+| `detail` | string | One-line summary shown in the sheet |
+| `itemLines` | string[] | The multi-line form used in the WhatsApp message |
+| `recipient` | object | `{name, phone, address, area}` |
+| `dtime` | string | Delivery window |
+| `note` | string | Free-text note |
+| `total` | number | Item subtotal in rupiah |
 
-Cart total is the plain sum of item totals — no discount, tax or delivery
-charge is applied at cart level (BR-10.3).
+There is no item ID, no quantity-merge, and no edit. Removing is by array index;
+changing an item means removing it and building it again.
 
-The rendered detail line reads:
+---
 
-```
-3 box/pax × Rp 38.000 × 5 tanggal · Tanggal: 24 – 28 Agu 2026 · Jam: Siang (12.00) · Tambahan: Extra Telur
-```
+## Validation
 
-## Recipient de-duplication
+Everything is **presence-only**. No format is ever checked (BR-12.5).
 
-Before building the message the page tests whether **every** item shares the
-same `name`, `phone`, `address`, `area`, `dtime` **and** `note`.
+### At "+ Tambah ke Order"
 
-- **All identical** → recipient details appear **once**, in a combined block near
-  the bottom. The message stays short.
-- **Any difference** → **every item repeats its own** Penerima / Alamat /
-  No. HP / Waktu Pengantaran / Catatan lines, so nothing is lost when one
-  customer orders for several people at several addresses (BR-12.3).
+| Card group | Required |
+|------------|----------|
+| Daily Order (4 cards) | Nama Penerima · No. WhatsApp · Alamat. Dates are enforced by disabling the button. |
+| Nasi Bento / Nasi Kuning / Paket Acara | The three above **plus** at least one delivery date. |
+| Catering Kantor | The three above **plus** Tanggal Mulai. |
 
-This is the customer-facing consequence of the recipient-per-card decision in
-[[01-product-overview]].
+Failure writes `Lengkapi dulu: <fields>.` into the card's own hint line. Nothing
+is focused, nothing scrolls, no field is marked. On a long card the message can
+appear off-screen.
 
-## Message construction
+### At checkout
+
+Only that the cart is non-empty. The send button carries `disabled` until then.
+
+### What is never validated
+
+- Phone number format — `abc` is accepted as a WhatsApp number.
+- Any length cap on names, addresses or notes.
+- Any normalisation — `0818…`, `+62818…` and `62818…` all pass through as typed.
+- Any sanitisation. Text is `encodeURIComponent`-escaped on the way into the
+  URL, which makes it safe *for the URL*, but it is also interpolated into the
+  summary sheet's `innerHTML` **unescaped** — see [[08-technical-inventory]].
+
+---
+
+## Reset behaviour
+
+| Trigger | Effect |
+|---------|--------|
+| Successful add | That one card resets to blank — dates, qty, add-ons, prefs, recipient, delivery window back to Siang (12.00) |
+| **↺ Reset / Ulang Order dari Awal** | `confirm()`, then empties the cart **and** resets every one of the eight cards |
+| Reload / close tab | Everything is lost, silently |
+
+The reset button always confirms, even with an empty cart — because a card may
+hold picks that never reached the cart (BR-12.8).
+
+---
+
+## The WhatsApp message
+
+### Construction
 
 The message is built as an **array of plain-text lines**, then each line is
-percent-encoded **individually** and joined with `%0A`.
+`encodeURIComponent`-ed individually and joined with `%0A`. That is deliberate:
+encoding the whole string at once would escape the newlines too and produce one
+run-on line.
 
-The reason is in the source: encoding the whole blob at once would escape the
-newlines too, and WhatsApp would receive one unreadable run-on line. Encoding
-per line keeps every `%0A` a real line break while still safely escaping
-user-typed names, addresses and notes. Some stored lines carry an embedded `\n`
-(the multi-date "Tanggal" line) and are split before being pushed.
+Lines carrying an embedded `\n` — the "Tanggal" line for scattered dates — are
+split before being pushed, so they render as two lines.
 
-The message includes the bank block:
+```js
+const msg = lines.map(l => encodeURIComponent(l)).join('%0A');
+window.open(`https://wa.me/62818100523?text=${msg}`, '_blank');
+```
+
+### The `sameRecipient` optimisation
+
+Before building, the code checks whether **every** item shares the same
+recipient name, phone, address and area, *and* the same delivery time, *and*
+the same note.
+
+- **All identical** → the recipient block is printed **once**, near the bottom.
+- **Any difference** → each item carries its own Penerima / Alamat / Area /
+  No. HP / Waktu Pengantaran / Catatan block.
+
+### Structure
 
 ```
+Halo Thenie, saya mau order:
+
+1. <item name>
+<itemLines…>
+Paket: <tier label>
+<n> hari (berturutan|acak) · <pax> pax · Rp <rate>/hari/pax
+Tanggal: <period>
+Tambahan:
+- <add-on> (+Rp x/pax/hari × n hari) (Senin, Kamis)
+Preferensi: <prefs>
+                                    ← only when recipients differ:
+Penerima: <name>
+Alamat: <address>
+Area: <area>
+No. HP: <phone>
+Waktu Pengantaran: <slot>
+*Catatan: <note>*
+
+*Subtotal: Rp <n>*
+
+2. <next item…>
+
+*Total: Rp <n>*
+                                    ← only when every recipient matches:
+Nama: <name>
+Alamat: <address>
+Area: <area>
+No. HP: <phone>
+Tanggal mulai/kirim: <YYYY-MM-DD>
+Waktu Pengantaran: <slot>
+*Catatan: <note>*
+
+Pembayaran:
 BCA a.n. R Bg Andreas Kurnianto
 No. Rek: 8660-281-402
+
+*Silahkan lakukan pembayaran sesuai dengan total yang disebutkan di atas.*
+*Mohon dapat dibantu untuk diberikan keterangan pada saat transfer "Catering atas nama ..." agar mempermudah pengecekan. Thanks*
 ```
 
-Final URL shape:
+`*asterisks*` are WhatsApp bold markers. Subtotals, the total, and notes are
+bolded; the payment instructions are bolded in full.
 
-```
-https://wa.me/62818100523?text=<encoded>
-```
+### The optional start date
 
-## The handoff gap
+`#cust-date` at checkout is the one field the summary sheet still collects. It
+is optional, and it is **never used in pricing**. It appears as
+`Tanggal mulai/kirim:` in the shared-recipient block, or as
+`Tanggal mulai/kirim (umum):` when recipients differ. Note it is emitted as the
+raw `YYYY-MM-DD` input value, not formatted like every other date in the
+message.
 
-**The page does not send anything.** It opens WhatsApp with a draft. The
-customer must still press send.
+---
 
-| Consequence | Detail |
-|-------------|--------|
-| **Silent abandonment** | A customer who reaches WhatsApp and stops is invisible. The business never learns the order existed. |
-| **No confirmation** | Nothing tells the customer the order arrived. |
-| **No order number** | Nothing identifies the order on either side. |
-| **No copy for the customer** | Leaving the page loses the cart (BR-1.7). |
-| **Editable in transit** | The draft is plain text in the customer's own app — quantities, dates and prices can be altered before sending. |
-| **URL length** | A large multi-item order produces a very long URL. No truncation guard exists. |
+## Delivery windows
 
-For a mockup this is fine — it is the cheapest possible order channel and it
-matches how the business already works. For a rebuild it is the first thing to
-replace; see [[09-open-questions]].
+| Option | Value written to the message |
+|--------|------------------------------|
+| Pagi 06.00–07.00 | `Pagi (06.00–07.00)` |
+| Pagi 07.00–09.00 | `Pagi (07.00–09.00)` |
+| **Siang (12.00)** — default | `Siang (12.00)` |
+| Sore (18.00) | `Sore (18.00)` |
+| Request (dikonfirmasi) | `Request (dikonfirmasi admin)` |
 
-Related: [[02-business-rules]] · [[03-site-structure]]
+Same-day availability is governed by BR-7.4. The area restrictions on the two
+Pagi windows are printed under the radios and never enforced (BR-10.2).
+
+---
+
+## The other WhatsApp links
+
+The marketing pages have their own, entirely separate, WhatsApp path — a small
+IIFE with four canned messages:
+
+| `data-msg` | Message |
+|------------|---------|
+| `home` | Halo Thenie, saya ingin tanya-tanya soal katering. |
+| `korporat` | Halo Thenie, saya ingin tanya soal katering korporat untuk kantor kami. |
+| `personal` | Halo Thenie, saya ingin tanya soal langganan katering harian untuk personal/keluarga. |
+| `event` | Halo Thenie, saya ingin tanya soal katering untuk acara/event. |
+
+Any `.wa-link` element gets its `href` rewritten on load from its `data-msg`.
+The Kontak page's segmented control switches between `korporat`, `personal` and
+`event`, previewing the text before sending. `korporat` is preselected.
+
+Both the footer and Kontak page also carry **plain, un-prefilled**
+`https://wa.me/…` links, including the only appearance of the second number,
+`62817771123`.
+
+---
+
+## What the flow does not do
+
+| Missing | Consequence |
+|---------|-------------|
+| No persistence | A reload destroys a 20-date order with no warning |
+| No submission | The business sees nothing unless the customer presses send in WhatsApp |
+| No confirmation | No order number, no receipt, no email |
+| No availability check | Any date, any quantity, no capacity limit |
+| No payment integration | The transfer is manual and unverified |
+| No edit | Changing an item means deleting and rebuilding it |
+| No message length guard | A large multi-item order can produce a very long `wa.me` URL |
+
+Raised in [[09-open-questions]].
+
+Related: [[02-business-rules]] · [[03-site-structure]] · [[08-technical-inventory]]

@@ -5,6 +5,45 @@
 > push here, then `git pull` + `./scripts/build-site.sh` + `cp` on the server.
 > Everything from Part 1 onwards is first-time setup.
 
+> ### If your server is already set up: nothing here needs redoing
+>
+> The site was re-captured on **2026-08-27** and is now a full six-page site
+> rather than the order form alone. **None of that touches the server.** It is
+> still one static HTML file in one web root behind the Nginx config you already
+> wrote. Concretely, all of this stays exactly as it is — do **not** redo any of
+> it:
+>
+> | Already working | Still correct? |
+> |-----------------|----------------|
+> | DNS A records for `thenie.id` / `www` (Part 1) | ✅ unchanged |
+> | `/var/www/thenie` web root and its permissions (Part 3) | ✅ unchanged |
+> | The clone at `/opt/thenie_v2` and its deploy key (Part 4) | ✅ unchanged |
+> | The Nginx server blocks (Part 5) | ✅ unchanged |
+> | HTTPS — certbot **or** the Cloudflare Origin Certificate (Part 7 / Appendix D) | ✅ unchanged |
+> | Cloudflare proxy mode, real-IP config, `Full (strict)` (Appendix D) | ✅ unchanged |
+> | UFW / firewall rules (Appendix D7) | ✅ unchanged |
+> | The `X-Robots-Tag`, cache and security headers | ✅ unchanged |
+>
+> **The everyday deploy path is the whole job:** `git pull`,
+> `./scripts/build-site.sh`, `sudo cp` the result into the web root. That is it.
+>
+> Three numbers changed, and the runbook below already reflects them — you only
+> need them if you are checking something by hand:
+>
+> | | Before (2026-08-22) | Now (2026-08-27) |
+> |---|---|---|
+> | Mirror size | 4,615,031 B | **6,983,019 B** |
+> | Mirror SHA-256 | `9d4cfefb…` | **`b66ed302…`** |
+> | Deploy check | `grep -c 'class="wa-fab"'` | **`grep -c 'Floating-button clearance'`** |
+>
+> The last one changed because the capture now ships its own WhatsApp button, so
+> our overlay no longer adds one — it only keeps the page's button from covering
+> the checkout bar. See [[14-overlays]].
+>
+> One genuinely new fact, and it is a client-side one: the page now loads its
+> font from Google. See [One thing the server does NOT serve](#one-thing-the-server-does-not-serve-the-font)
+> below. Nothing to configure unless you add a `Content-Security-Policy`.
+
 **Audience:** someone who has never deployed a server before.
 **Your setup:** the same Ubuntu machine described in the SCHOOL_CATERING runbook
 — **Nginx** is the only web server, it already serves your **PHP site** (via
@@ -39,7 +78,7 @@ Internet ──443──▶  Nginx (your existing front door)
                        ├──▶  thenie.id      ◀── WE ADD THIS (the site)
                        └──▶  www.thenie.id  ◀── WE ADD THIS (301 → thenie.id)
                                      │
-                                     └── /var/www/thenie/index.html   (one 4.6 MB file)
+                                     └── /var/www/thenie/index.html   (one 6.7 MB file)
 ```
 
 - **No Docker.** Nothing runs. Nginx reads a file off the disk and sends it.
@@ -50,6 +89,36 @@ Internet ──443──▶  Nginx (your existing front door)
 Because nothing runs, there is nothing to crash, nothing to restart, and nothing
 to monitor. The only failure modes are "Nginx config typo" and "certificate
 expired".
+
+### One thing the server does NOT serve: the font
+
+New in the 2026-08-27 capture. The page pulls its typeface, **Baloo 2**, from
+Google Fonts at render time:
+
+```
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+```
+
+That request goes **from the visitor's browser to Google**, not through your
+server, so there is nothing to configure and nothing to install. But it does
+change three things worth knowing before you go live:
+
+- **The page is no longer fully self-contained.** Every other byte — all 44
+  images included — is inlined in the file. The font is the single exception.
+- **On a network that blocks Google, the site still works** but falls back to
+  the browser's own sans-serif, so it looks noticeably different. `&display=swap`
+  means text is readable immediately either way; it never blocks rendering.
+- **If you ever add a `Content-Security-Policy` header, it must allow
+  `fonts.googleapis.com` (style) and `fonts.gstatic.com` (font)** — otherwise
+  you will silently break the typeface. This config deliberately ships no CSP;
+  if you add one, test the font before calling it done.
+
+The previous capture used system fonts only and had no external requests at all.
+If self-hosting the font ever matters (privacy, an air-gapped network, EU data
+rules), that is a rebuild task, not a server task — it means editing the page,
+which the exact-mirror rule forbids. See [[07-fidelity-and-verification]].
 
 ---
 
@@ -121,7 +190,8 @@ sudo chown www-data:www-data /var/www/thenie/index.html
 sudo chmod 644 /var/www/thenie/index.html
 
 # 4. check
-grep -c 'class="wa-fab"' /var/www/thenie/index.html   # 1 = WhatsApp button is live
+grep -c 'class="fab-wa"'              /var/www/thenie/index.html  # 1 = WhatsApp button is live
+grep -c 'Floating-button clearance'   /var/www/thenie/index.html  # 1 = you published dist/, not the raw mirror
 sha256sum /var/www/thenie/index.html                  # same hash build-site.sh printed
 ```
 
@@ -168,7 +238,7 @@ sudo chown www-data:www-data /var/www/thenie/index.html
 ```
 
 That restores the previous file instantly. To go back further, check out an
-older commit in `/opt/thenie_v2` and rebuild — see [[14-whatsapp-fab]] for what
+older commit in `/opt/thenie_v2` and rebuild — see [[14-overlays]] for what
 the build is actually doing.
 
 ### If the server has no clone yet
@@ -235,7 +305,7 @@ Expected output:
 active
 ```
 
-Check you have room for the file (it is 4.6 MB, so this is a formality):
+Check you have room for the file (it is 6.7 MB, so this is a formality):
 
 ```bash
 df -h /var/www
@@ -330,7 +400,7 @@ sudo cp /opt/thenie_v2/dist/index.html /var/www/thenie/index.html
 
 `build-site.sh` stitches the untouched mirror together with the overlays in
 `site/overlays/` — today that means the floating WhatsApp button, see
-[[14-whatsapp-fab]] — and writes `dist/index.html`. It needs nothing but bash
+[[14-overlays]] — and writes `dist/index.html`. It needs nothing but bash
 and coreutils, and it verifies the mirror's hash before it builds. **`dist/` is
 git-ignored, so it does not arrive with `git pull`; you build it on the server.**
 Copying `site/index.html` directly still works, but publishes the page *without*
@@ -398,7 +468,8 @@ sudo chmod 644 /var/www/thenie/index.html
 
 ```bash
 sha256sum /var/www/thenie/index.html
-grep -c 'class="wa-fab"' /var/www/thenie/index.html   # must print 1
+grep -c 'class="fab-wa"'            /var/www/thenie/index.html  # must print 1
+grep -c 'Floating-button clearance' /var/www/thenie/index.html  # must print 1
 ```
 
 The `sha256sum` must match what `sha256sum dist/index.html` printed on the
@@ -410,7 +481,7 @@ If you deployed the **pristine mirror** via Option C, `grep` prints `0` and the
 hash must instead be exactly:
 
 ```
-9d4cfefba381b6a8c3adbc822281e701c7b8cca98d1e7d40b5ac1ccafbb0df49
+b66ed30212d3cb3ffe00c1385ea9a23996d8611cb3bed40a288fed99b6ed9689
 ```
 
 If it does not, the file was corrupted or altered in transit — copy it again.
@@ -475,7 +546,7 @@ server {
     #
     # If you ever add an add_header inside a location, repeat all five here.
 
-    # The page is one 4.6 MB HTML file replaced wholesale on each deploy, so it
+    # The page is one 6.7 MB HTML file replaced wholesale on each deploy, so it
     # must never be cached hard -- otherwise visitors keep an old copy after an
     # update. This matches what Netlify serves upstream.
     add_header Cache-Control "public, max-age=0, must-revalidate" always;
@@ -489,8 +560,11 @@ server {
     #             is invisible in search, and nobody will know why.
     #
     # Deleting it is not enough on its own: the page ships no meta description,
-    # no Open Graph tags and no <h1> (see docs/08-technical-inventory.md), so it
-    # will index thinly and share as a bare link. See Q-13 in
+    # no Open Graph tags, no canonical URL and no JSON-LD (see
+    # docs/08-technical-inventory.md), so it will index thinly and share as a
+    # bare link with no title card. It does now have real <h1>s -- six of them,
+    # one per client-side page -- which is a step up from the previous capture
+    # but is not on its own an SEO baseline. See Q-13 in
     # docs/09-open-questions.md.
     add_header X-Robots-Tag "noindex, nofollow" always;
 
@@ -499,15 +573,19 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header Referrer-Policy        "strict-origin-when-cross-origin" always;
 
-    # Everything resolves to the single page. There are no other files and no
-    # client-side routes, but this keeps a stray path from returning a bare 404.
+    # Everything resolves to the single page. The site DOES have client-side
+    # routes now (#home, #about, #menu, #pricing, #order, #contact), but they are
+    # URL *fragments*: the browser never sends them to the server, so nginx only
+    # ever sees "/". No rewrite rules are needed for them. This line just keeps a
+    # stray path from returning a bare 404.
     location / {
         try_files $uri $uri/ /index.html;
     }
 
     # Compression. The inline CSS/JS/markup compresses well; the base64 JPEGs
-    # are already compressed and barely shrink, so expect roughly 4.6 MB to
-    # become roughly 4.4 MB. That is a limit of the mirrored file, not of the
+    # are already compressed and barely shrink, so expect roughly 6.7 MB to
+    # become roughly 4.9 MB (measured: 6,985,620 -> 5,129,765 bytes at
+    # gzip_comp_level 6). That is a limit of the mirrored file, not of the
     # server -- see docs/08-technical-inventory.md.
     #
     # Do NOT list text/html in gzip_types -- nginx always gzips it, and naming
@@ -523,7 +601,7 @@ server {
 ```
 
 > **This config was tested, not just written.** It was checked with `nginx -t`
-> (clean), then used to actually serve the real 4.6 MB file while the response
+> (clean), then used to actually serve the real 6.7 MB file while the response
 > headers and the served bytes were compared against the capture hash. The
 > `add_header` placement above is the *result* of that test — the first draft
 > looked right, passed `nginx -t`, served the file fine, and silently dropped
@@ -627,8 +705,8 @@ sha256sum /var/www/thenie/index.html      # must be identical
 If the two differ, something between Nginx and the disk is rewriting the page.
 
 The served hash is **not** the capture hash any more: what ships is the mirror
-plus the overlays in `site/overlays/` ([[14-whatsapp-fab]]), so it changes
-whenever an overlay does. `9d4cfefba381b6a8c3adbc822281e701c7b8cca98d1e7d40b5ac1ccafbb0df49`
+plus the overlays in `site/overlays/` ([[14-overlays]]), so it changes
+whenever an overlay does. `b66ed30212d3cb3ffe00c1385ea9a23996d8611cb3bed40a288fed99b6ed9689`
 is the hash of `site/index.html` alone — the untouched capture — and that one
 never changes.
 
@@ -668,7 +746,8 @@ sudo chmod 644 /var/www/thenie/index.html
 
 # 3. check
 sha256sum /var/www/thenie/index.html
-grep -c 'class="wa-fab"' /var/www/thenie/index.html   # 1 = WhatsApp button is live
+grep -c 'class="fab-wa"'              /var/www/thenie/index.html  # 1 = WhatsApp button is live
+grep -c 'Floating-button clearance'   /var/www/thenie/index.html  # 1 = you published dist/, not the raw mirror
 ```
 
 **Do not skip `./scripts/build-site.sh`.** `dist/` is git-ignored, so `git pull`
@@ -737,7 +816,7 @@ curl -s --compressed https://thenie.id | sha256sum
 sha256sum /var/www/thenie/index.html
 
 # confirm the WhatsApp button is live
-curl -s --compressed https://thenie.id | grep -c 'class="wa-fab"'   # 1
+curl -s --compressed https://thenie.id | grep -c 'Floating-button clearance'   # 1
 
 # confirm the mirror in the clone is still the untouched capture
 cd /opt/thenie_v2 && ./scripts/verify-mirror.sh
@@ -755,10 +834,10 @@ cd /opt/thenie_v2 && ./scripts/verify-mirror.sh
 | Certbot fails | DNS not resolving yet | `nslookup thenie.id` must return `172.236.152.44`; wait and retry. |
 | Serves the **wrong site** | Another server block claims the name, or this one is unreachable | `sudo nginx -T \| grep -n "server_name"` |
 | Page loads but photos missing | Truncated file | Compare `sha256sum` against `dist/index.html`. Re-copy. |
-| Very slow first load | The 4.6 MB payload | Expected. See Q-15 in [[09-open-questions]]. |
+| Very slow first load | The 6.7 MB payload | Expected. See Q-15 in [[09-open-questions]]. |
 | Old version still showing | Browser cache | Hard-refresh (Ctrl-Shift-R). Confirm `cache-control` in Part 8. |
 | Pulled, but the site did not change | `./scripts/build-site.sh` was skipped, or `dist/index.html` was never copied to the web root | Re-run *Deploying an update* in full. `dist/` is git-ignored — the pull alone cannot change the served file. |
-| No WhatsApp button after deploying | Published `site/index.html` instead of `dist/index.html` | `grep -c 'class="wa-fab"' /var/www/thenie/index.html` — if `0`, copy from `dist/`. |
+| WhatsApp button sits on top of the checkout bar | Published `site/index.html` instead of `dist/index.html` | `grep -c 'Floating-button clearance' /var/www/thenie/index.html` — if `0`, copy from `dist/`. |
 | `git pull`: *local changes would be overwritten* | The server checkout was edited | `cd /opt/thenie_v2 && git checkout -- . && git pull` |
 | `build-site.sh`: *no longer matches the recorded capture hash* | `site/index.html` was modified | `cd /opt/thenie_v2 && git checkout -- site/index.html` |
 | Existing PHP site broke | You edited its config | `sudo nginx -T` and compare. This runbook never touches it. |

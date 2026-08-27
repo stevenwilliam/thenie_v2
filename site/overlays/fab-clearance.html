@@ -1,0 +1,51 @@
+<!-- ─────────────────────────────────────────────────────────────────────────
+     Floating-button clearance (overlay — NOT part of the captured mirror).
+     Injected before the closing body tag by scripts/build-site.sh.
+     See docs/14-overlays.md.
+
+     The capture ships its own WhatsApp button (`.fab-wa`, bottom-right, 60px,
+     z-index 200) — we no longer add one. What it does NOT do is keep that
+     button clear of the two other things pinned to the bottom of the viewport:
+
+       .float-nav  the persistent pill nav, centred, ~186-200px wide, 60px tall,
+                   bottom:20px — and bottom:96px while the Order page is open.
+       .cart-bar   the Order page checkout bar, full width, ~102px tall,
+                   bottom:0.
+
+     On the Order page the button lands inside the cart bar's band (22-82px vs
+     0-102px) and covers the right edge of "Lihat Order & Checkout" — which is
+     full-width on a phone. And below ~360px the pill and the button overlap
+     horizontally on every page.
+
+     Fix: lift the button over whatever is actually beneath it. Nothing else
+     about it changes — same size, colour, position anchor and link. Delete this
+     file and re-run scripts/build-site.sh to go back to the bare capture.
+     ───────────────────────────────────────────────────────────────────────── -->
+<style>
+  /* Wide screens: the pill nav is nowhere near the right edge, so the only
+     thing to clear is the Order page's cart bar. */
+  @media (min-width:561px){
+    body:has(#order.page.active) .fab-wa{
+      bottom:calc(110px + env(safe-area-inset-bottom));
+    }
+  }
+
+  /* Phones: the pill nav reaches far enough right to collide, so the button
+     stacks above it instead of beside it — on every page, and one step higher
+     again on the Order page where the pill itself is already lifted. */
+  @media (max-width:560px){
+    .fab-wa{
+      bottom:calc(92px + env(safe-area-inset-bottom));
+    }
+    body:has(#order.page.active) .fab-wa{
+      bottom:calc(168px + env(safe-area-inset-bottom));
+    }
+  }
+
+  /* The capture animates .fab-wa on hover only; keep that honest under
+     reduced-motion, which it currently ignores. */
+  @media (prefers-reduced-motion:reduce){
+    .fab-wa{transition:none;}
+    .fab-wa:hover{transform:none;}
+  }
+</style>
