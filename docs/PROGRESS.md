@@ -181,6 +181,30 @@ logged rather than silent. The clean fix — inject the config into `<head>` at
 build time, before the app script — is about twenty lines and is v2 work.
 Documented in [[16-server-side-pricing]] §4.
 
+## 12. Admin UI and RBAC
+
+| Item | Status | Evidence |
+|------|--------|----------|
+| Schema: users, roles, permissions, sessions, audit | ✅ | migration `0009_rbac`, 11 permissions, 4 seeded roles |
+| Go constants pinned to the seeded rows | ✅ | `TestPermissionConstantsMatchTheSeed` — 11 matched both ways |
+| argon2id passwords, carried over not reinvented | ✅ | salted, constant-time, malformed hashes rejected |
+| Sessions: hash-at-rest, revocable, expiring | ✅ | raw token provably absent from the table; hourly purge |
+| Deny-by-default authorisation | ✅ | every route behind `requirePerm`; **matrix verified across 3 roles × 7 routes** |
+| CSRF closed | ✅ | custom header + SameSite=Strict; write without the header → 403 |
+| No account enumeration | ✅ | unknown email and wrong password give the identical message; dummy hash equalises timing |
+| Lockout | ✅ | 5 failures → the correct password is refused for 15 minutes |
+| Last-admin guard | ✅ | delete / deactivate / demote all refused; allowed once a second owner exists |
+| Owner role immutable | ✅ | refused with an explanation |
+| Audit trail | ✅ | every write and every failed login, attributed |
+| Service token preserved as machine access | ✅ | full permissions, logged as `service-token`, CSRF-exempt |
+| Admin UI, embedded, no build step | ✅ | 6 screens; rendered in headless Chrome as owner and as editor |
+| UI respects permissions | ✅ | editor sees Harga read-only with a banner; Pengguna/Log greyed out |
+| No `innerHTML` anywhere | ✅ | the `h()` helper throws on it |
+| Modal is a real dialog | ✅ | `role`, `aria-modal`, Escape, focus — unlike the captured site's (A11Y-10) |
+| CLI bootstrap | ✅ | `thenied user create/list/password/roles/activate` |
+| Integration tests | ✅ | role union, unknown role rollback, last-admin count, session lifecycle, lockout+audit, service token |
+| Bugs found by the tests | ✅ | `''::uuid` cast broke the last-admin count; the CLI's second prompt hit EOF when piped. Both fixed. |
+
 ## 9. Not done
 
 | Item | Status | Why |
@@ -193,7 +217,7 @@ Documented in [[16-server-side-pricing]] §4.
 | Backend for **orders** (persistence, submission) | ⬜ | the config engine quotes but does not take orders — Q-1 to Q-4 |
 | Head-injection so the page's own calculator follows the database | ⬜ | ~20 lines; would close the last gap in [[16-server-side-pricing]] §4 |
 | Hydrating the Harga tables, areas, windows, testimonials | ⬜ | stored and served; not yet wired into the DOM |
-| Admin UI | ⬜ | API only today; `curl` or any REST client |
+| Admin UI | ✅ | see §12 — `/admin/`, six screens, RBAC-aware |
 | systemd unit + Nginx `/api/` proxy on the server | ⬜ | documented in [[15-backend-engine]], not yet applied |
 
 Related: [[00-index]] · [[07-fidelity-and-verification]] · [[09-open-questions]]

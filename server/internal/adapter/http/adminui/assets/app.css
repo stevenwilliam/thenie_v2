@@ -1,0 +1,120 @@
+/* Admin UI styling.
+   Borrows the site's own palette (docs/06-design-system.md) so the two feel
+   related, but uses --maroon-deep #B84B39 rather than --maroon #E1614A for
+   anything text-on-white or white-on-fill: A11Y-1 and A11Y-2 record that the
+   lighter coral fails WCAG AA at 3.49:1, and there is no reason to repeat a
+   known defect in a tool built from scratch. */
+:root{
+  --ink:#2B2620; --ink-soft:#615848; --ink-faint:#6f6757;
+  --bg:#F7F4EE; --surface:#FFFFFF; --line:#E2DACE;
+  --brand:#B84B39; --brand-dark:#933B2D; --brand-tint:#FCE3DE;
+  --olive:#4A6128; --olive-tint:#E7EEDA;
+  --danger:#A3271C; --danger-tint:#FBE4E1;
+  --focus:#1F6FB2;
+  --radius:10px;
+  --shadow:0 1px 2px rgba(43,38,32,.06), 0 4px 16px rgba(43,38,32,.06);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:var(--brand-dark)}
+h1,h2,h3{margin:0 0 .5rem;line-height:1.25}
+h1{font-size:1.35rem} h2{font-size:1.1rem} h3{font-size:.98rem}
+code,kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em}
+
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+
+/* ---- shell ---- */
+.app{display:grid;grid-template-columns:232px 1fr;min-height:100vh}
+.side{background:var(--surface);border-right:1px solid var(--line);padding:18px 14px;display:flex;flex-direction:column;gap:4px}
+.brand{display:flex;align-items:center;gap:9px;padding:2px 8px 16px;font-weight:700}
+.brand span.dot{width:10px;height:10px;border-radius:50%;background:var(--brand);flex:0 0 auto}
+.brand small{display:block;font-weight:500;font-size:.72rem;color:var(--ink-faint);letter-spacing:.06em;text-transform:uppercase}
+.nav button{
+  display:flex;align-items:center;gap:9px;width:100%;text-align:left;
+  background:none;border:0;padding:9px 10px;border-radius:8px;cursor:pointer;
+  font:inherit;color:var(--ink-soft);
+}
+.nav button:hover{background:var(--bg)}
+.nav button[aria-current="page"]{background:var(--brand-tint);color:var(--brand-dark);font-weight:600}
+.nav button[disabled]{opacity:.4;cursor:not-allowed}
+.side .foot{margin-top:auto;border-top:1px solid var(--line);padding-top:12px;font-size:.82rem;color:var(--ink-faint)}
+.side .foot b{display:block;color:var(--ink);font-size:.9rem}
+
+.main{padding:22px 26px 60px;max-width:1100px}
+.head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}
+.head p{margin:.2rem 0 0;color:var(--ink-soft);font-size:.9rem;max-width:64ch}
+
+/* ---- surfaces ---- */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow);margin-bottom:16px}
+.card>h2{display:flex;align-items:center;gap:8px}
+.muted{color:var(--ink-faint);font-size:.86rem}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.grid{display:grid;gap:12px}
+.grid.two{grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+.grid.four{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+
+/* ---- controls ---- */
+label{display:block;font-size:.82rem;font-weight:600;color:var(--ink-soft);margin:0 0 4px}
+input[type=text],input[type=email],input[type=password],input[type=number],input[type=date],select,textarea{
+  width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;
+  background:var(--surface);color:var(--ink);font:inherit;
+}
+input:disabled,select:disabled,textarea:disabled{background:var(--bg);color:var(--ink-faint)}
+textarea{min-height:70px;resize:vertical}
+.btn{
+  display:inline-flex;align-items:center;gap:7px;padding:8px 14px;border-radius:8px;
+  border:1px solid transparent;background:var(--brand);color:#fff;font:inherit;font-weight:600;cursor:pointer;
+}
+.btn:hover{background:var(--brand-dark)}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.btn.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
+.btn.ghost:hover{background:var(--bg)}
+.btn.danger{background:var(--danger)}
+.btn.sm{padding:5px 10px;font-size:.85rem}
+.chk{display:flex;align-items:flex-start;gap:8px;font-weight:400;font-size:.88rem;color:var(--ink);margin:0 0 6px}
+.chk input{margin-top:3px;flex:0 0 auto}
+
+/* ---- table ---- */
+table{width:100%;border-collapse:collapse;font-size:.9rem}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:.76rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint)}
+tbody tr:hover{background:var(--bg)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+
+/* ---- misc ---- */
+.pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.75rem;font-weight:600;background:var(--olive-tint);color:var(--olive)}
+.pill.off{background:var(--danger-tint);color:var(--danger)}
+.pill.grey{background:var(--bg);color:var(--ink-faint)}
+.banner{padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:.9rem;border:1px solid}
+.banner.ok{background:var(--olive-tint);border-color:#c6d5ae;color:var(--olive)}
+.banner.err{background:var(--danger-tint);border-color:#eebcb5;color:var(--danger)}
+.banner.warn{background:#FDF3E0;border-color:#e7cf9f;color:#8a5a26}
+.toast{position:fixed;right:18px;bottom:18px;z-index:50;max-width:380px}
+
+/* ---- login ---- */
+.login{min-height:100vh;display:grid;place-items:center;padding:20px}
+.login .card{width:100%;max-width:380px;margin:0}
+
+/* ---- menu editor ---- */
+.daygrid{display:grid;gap:10px}
+.day{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:var(--surface)}
+.day header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+.day header b{font-size:.9rem}
+.items{display:grid;gap:6px}
+.item{display:grid;grid-template-columns:1fr 90px 32px;gap:6px;align-items:center}
+.plantabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.plantabs button{padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--surface);font:inherit;cursor:pointer}
+.plantabs button[aria-pressed="true"]{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
+
+@media (max-width:820px){
+  .app{grid-template-columns:1fr}
+  .side{flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--line)}
+  .side .foot{margin:0;border:0;padding:0}
+  .nav{display:flex;gap:4px;flex-wrap:wrap}
+  .item{grid-template-columns:1fr 72px 32px}
+}

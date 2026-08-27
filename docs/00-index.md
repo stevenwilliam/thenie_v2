@@ -28,6 +28,7 @@ _Capture date: **2026-08-27**. SHA-256 `b66ed302…` — see
 | 13 | [[13-production-deployment-runbook]] | Deploy to the Ubuntu + Nginx server |
 | 15 | [[15-backend-engine]] | The Go + PostgreSQL service that makes the content editable |
 | 16 | [[16-server-side-pricing]] | The order calculator on the backend, and configurable price rules |
+| 17 | [[17-admin-ui-and-rbac]] | The admin UI, accounts, roles and the audit trail |
 | 14 | [[14-overlays]] | The overlay mechanism — our only additions to the mirror |
 |  — | [[PROGRESS]] | Build status |
 |  — | `screenshots/` | Rendered evidence — all six pages, desktop and mobile |

@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/stevenwilliam/thenie_v2/server/internal/app/admin"
 	"github.com/stevenwilliam/thenie_v2/server/internal/app/ports"
 	"github.com/stevenwilliam/thenie_v2/server/internal/app/siteconfig"
 	"github.com/stevenwilliam/thenie_v2/server/internal/domain/pricing"
@@ -57,7 +58,7 @@ func getPricingRules(svc *siteconfig.Service) gin.HandlerFunc {
 // price, it changes which price applies. So it validates in the domain first,
 // and the database has its own CHECKs behind that — a rule set that makes a
 // branch unreachable is refused twice.
-func setPricingRules(repo ports.RulesRepository, svc *siteconfig.Service) gin.HandlerFunc {
+func setPricingRules(repo ports.RulesRepository, svc *siteconfig.Service, aud *admin.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var in pricing.Rules
 		if err := bindJSON(c, &in); err != nil {
@@ -73,6 +74,9 @@ func setPricingRules(repo ports.RulesRepository, svc *siteconfig.Service) gin.Ha
 			return
 		}
 		svc.Invalidate()
+		// The most consequential write in the service: it does not change a
+		// price, it changes which price applies. Always audited.
+		audit(c, aud, "pricing.rules", "", map[string]any{"rules": in})
 		c.JSON(http.StatusOK, gin.H{"pricing_rules": in})
 	}
 }

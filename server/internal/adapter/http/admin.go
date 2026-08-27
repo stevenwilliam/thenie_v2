@@ -1,10 +1,12 @@
 package http
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/stevenwilliam/thenie_v2/server/internal/app/admin"
 	"github.com/stevenwilliam/thenie_v2/server/internal/app/ports"
 	"github.com/stevenwilliam/thenie_v2/server/internal/app/siteconfig"
 	"github.com/stevenwilliam/thenie_v2/server/internal/domain/catalogue"
@@ -27,7 +29,7 @@ func listParams(repo ports.ParamRepository) gin.HandlerFunc {
 	}
 }
 
-func setParam(repo ports.ParamRepository, svc *siteconfig.Service) gin.HandlerFunc {
+func setParam(repo ports.ParamRepository, svc *siteconfig.Service, aud *admin.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var body struct {
 			Value *string `json:"value"`
@@ -45,11 +47,12 @@ func setParam(repo ports.ParamRepository, svc *siteconfig.Service) gin.HandlerFu
 			return
 		}
 		svc.Invalidate()
+		audit(c, aud, "param.set", c.Param("key"), map[string]any{"value": *body.Value})
 		c.JSON(http.StatusOK, gin.H{"key": c.Param("key"), "value": *body.Value})
 	}
 }
 
-func setPlanRates(repo ports.RateRepository, svc *siteconfig.Service) gin.HandlerFunc {
+func setPlanRates(repo ports.RateRepository, svc *siteconfig.Service, aud *admin.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var in siteconfig.Rates
 		if err := bindJSON(c, &in); err != nil {
@@ -74,11 +77,12 @@ func setPlanRates(repo ports.RateRepository, svc *siteconfig.Service) gin.Handle
 			return
 		}
 		svc.Invalidate()
+		audit(c, aud, "price.plan_rates", c.Param("slug"), map[string]any{"rates": in})
 		c.JSON(http.StatusOK, gin.H{"plan": c.Param("slug"), "rates": in})
 	}
 }
 
-func setTierPrices(repo ports.RateRepository, svc *siteconfig.Service) gin.HandlerFunc {
+func setTierPrices(repo ports.RateRepository, svc *siteconfig.Service, aud *admin.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var body struct {
 			MinQty int               `json:"min_qty"`
@@ -101,11 +105,13 @@ func setTierPrices(repo ports.RateRepository, svc *siteconfig.Service) gin.Handl
 			return
 		}
 		svc.Invalidate()
+		audit(c, aud, "price.tier_prices", c.Param("slug")+"/"+c.Param("name"),
+			map[string]any{"tiers": body.Tiers})
 		c.JSON(http.StatusOK, gin.H{"product": c.Param("slug"), "package": c.Param("name"), "tiers": body.Tiers})
 	}
 }
 
-func setKantorRates(repo ports.RateRepository, svc *siteconfig.Service) gin.HandlerFunc {
+func setKantorRates(repo ports.RateRepository, svc *siteconfig.Service, aud *admin.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var body struct {
 			Bands []siteconfig.Band `json:"bands"`
@@ -128,6 +134,8 @@ func setKantorRates(repo ports.RateRepository, svc *siteconfig.Service) gin.Hand
 			return
 		}
 		svc.Invalidate()
+		audit(c, aud, "price.kantor_rates", c.Param("grade")+"/"+c.Param("period"),
+			map[string]any{"bands": body.Bands})
 		c.JSON(http.StatusOK, gin.H{"grade": c.Param("grade"), "period": c.Param("period"), "bands": body.Bands})
 	}
 }
@@ -137,7 +145,7 @@ func setKantorRates(repo ports.RateRepository, svc *siteconfig.Service) gin.Hand
 // A week arrives complete or not at all. Half a week in the database is worse
 // than none: the page would render Monday to Wednesday and silently drop
 // Thursday, and nothing would look broken enough to notice.
-func upsertCycle(repo ports.MenuRepository, svc *siteconfig.Service) gin.HandlerFunc {
+func upsertCycle(repo ports.MenuRepository, svc *siteconfig.Service, aud *admin.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var body struct {
 			ISOYear  int    `json:"iso_year"`
@@ -195,11 +203,13 @@ func upsertCycle(repo ports.MenuRepository, svc *siteconfig.Service) gin.Handler
 			return
 		}
 		svc.Invalidate()
+		audit(c, aud, "menu.upsert", fmt.Sprintf("%d-W%02d", body.ISOYear, body.ISOWeek),
+			map[string]any{"label": body.Label, "publish": body.Publish, "plans": len(in.Days)})
 		c.JSON(http.StatusOK, gin.H{"id": id, "iso_year": body.ISOYear, "iso_week": body.ISOWeek})
 	}
 }
 
-func publishCycle(repo ports.MenuRepository, svc *siteconfig.Service, publish bool) gin.HandlerFunc {
+func publishCycle(repo ports.MenuRepository, svc *siteconfig.Service, aud *admin.Service, publish bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		year, err := pathInt(c, "year")
 		if err != nil {
@@ -216,11 +226,13 @@ func publishCycle(repo ports.MenuRepository, svc *siteconfig.Service, publish bo
 			return
 		}
 		svc.Invalidate()
+		audit(c, aud, "menu.publish", fmt.Sprintf("%d-W%02d", year, week),
+			map[string]any{"published": publish})
 		c.JSON(http.StatusOK, gin.H{"iso_year": year, "iso_week": week, "published": publish})
 	}
 }
 
-func deleteCycle(repo ports.MenuRepository, svc *siteconfig.Service) gin.HandlerFunc {
+func deleteCycle(repo ports.MenuRepository, svc *siteconfig.Service, aud *admin.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		year, err := pathInt(c, "year")
 		if err != nil {
@@ -237,6 +249,7 @@ func deleteCycle(repo ports.MenuRepository, svc *siteconfig.Service) gin.Handler
 			return
 		}
 		svc.Invalidate()
+		audit(c, aud, "menu.delete", fmt.Sprintf("%d-W%02d", year, week), nil)
 		c.Status(http.StatusNoContent)
 	}
 }

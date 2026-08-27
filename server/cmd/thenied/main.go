@@ -26,7 +26,9 @@ import (
 	"github.com/gin-gonic/gin"
 
 	adapterhttp "github.com/stevenwilliam/thenie_v2/server/internal/adapter/http"
+	"github.com/stevenwilliam/thenie_v2/server/internal/adapter/http/adminui"
 	"github.com/stevenwilliam/thenie_v2/server/internal/adapter/postgres"
+	"github.com/stevenwilliam/thenie_v2/server/internal/app/admin"
 	"github.com/stevenwilliam/thenie_v2/server/internal/app/siteconfig"
 	"github.com/stevenwilliam/thenie_v2/server/internal/platform/config"
 	"github.com/stevenwilliam/thenie_v2/server/internal/platform/database"
@@ -68,6 +70,8 @@ func run(args []string) error {
 		return runSeed(ctx, cfg, log, args[1:])
 	case "validate":
 		return runValidate(ctx, cfg, log)
+	case "user":
+		return runUser(ctx, cfg, log, args[1:])
 	case "help", "-h", "--help":
 		usage()
 		return nil
@@ -86,6 +90,7 @@ func usage() {
   thenied migrate status     show applied and pending
   thenied seed [--force]     load the captured page's content into an empty database
   thenied validate           re-check stored content against the domain rules
+  thenied user ...           manage admin accounts (list, create, password, roles)
 
 Configuration comes from the environment; see .env.example.
 `)
@@ -135,20 +140,44 @@ func serve(ctx context.Context, cfg *config.Config, log *slogLogger) error {
 	}
 
 	cfgSvc := siteconfig.NewService(postgres.NewConfigRepo(db))
+	adminSvc := admin.NewService(postgres.NewAdminRepo(db), cfg.AdminToken)
+
+	// Expired sessions accumulate forever otherwise. One sweep at start-up plus
+	// an hourly tick is enough for a table this small.
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			if n, err := adminSvc.PurgeExpiredSessions(ctx); err == nil && n > 0 {
+				log.Info("purged expired sessions", "count", n)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
 
 	if cfg.IsProduction() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	router := adapterhttp.New(adapterhttp.Deps{
-		Config:      cfgSvc,
-		Menu:        postgres.NewMenuRepo(db),
-		Params:      postgres.NewParamRepo(db),
-		Rates:       postgres.NewRateRepo(db),
-		Rules:       postgres.NewRulesRepo(db),
-		Log:         log,
-		AdminToken:  cfg.AdminToken,
-		CORSOrigins: cfg.CORSOrigins,
-		Version:     version,
+		Config:  cfgSvc,
+		Menu:    postgres.NewMenuRepo(db),
+		Params:  postgres.NewParamRepo(db),
+		Rates:   postgres.NewRateRepo(db),
+		Rules:   postgres.NewRulesRepo(db),
+		Admin:   adminSvc,
+		AdminUI: adminui.Handler(),
+		// Secure cookies require HTTPS. In development the admin UI is served
+		// over plain HTTP on a LAN address, and a Secure cookie would simply
+		// never be sent — the login would appear to succeed and then not stick.
+		SecureCookie: cfg.IsProduction(),
+		Log:          log,
+		AdminToken:   cfg.AdminToken,
+		CORSOrigins:  cfg.CORSOrigins,
+		Version:      version,
 	})
 
 	srv := &http.Server{
@@ -164,7 +193,7 @@ func serve(ctx context.Context, cfg *config.Config, log *slogLogger) error {
 	go func() {
 		log.Info("listening",
 			"addr", srv.Addr, "env", cfg.AppEnv, "version", version,
-			"admin_api", cfg.AdminToken != "")
+			"service_token", cfg.AdminToken != "", "admin_ui", "/admin/")
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}

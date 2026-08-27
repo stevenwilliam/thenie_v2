@@ -59,7 +59,12 @@ cd server && go build -o bin/thenied ./cmd/thenied && cd ..
 ./server/bin/thenied serve
 ```
 
-The page still works with it switched off — see
+There is an admin UI at `/admin/` with accounts, roles and an audit trail —
+create the first account with `thenied user create --email you@thenie.id
+--name "You" --roles owner`. See
+[docs/17-admin-ui-and-rbac.md](docs/17-admin-ui-and-rbac.md).
+
+The page still works with the whole service switched off — see
 [docs/15-backend-engine.md](docs/15-backend-engine.md).
 
 ## What the site is
@@ -107,6 +112,7 @@ Start at [docs/00-index.md](docs/00-index.md).
 | [14](docs/14-overlays.md) | The overlay mechanism |
 | [15](docs/15-backend-engine.md) | **The backend engine** — menus as data, not markup |
 | [16](docs/16-server-side-pricing.md) | **Server-side pricing** — the calculator in Go, rules as config |
+| [17](docs/17-admin-ui-and-rbac.md) | **Admin UI & RBAC** — accounts, roles, audit trail |
 
 ## Deploying
 

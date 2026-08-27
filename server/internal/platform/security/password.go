@@ -1,0 +1,166 @@
+// Package security holds password hashing, session tokens and the permission
+// model.
+//
+// Carried over from healthy_catering rather than reinvented: these shapes are
+// proven, and password hashing is the last place to be original.
+package security
+
+import (
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"strings"
+	"unicode"
+
+	"golang.org/x/crypto/argon2"
+)
+
+// Argon2id parameters. 64 MB / t=3 / p=2 is the OWASP-suggested
+// balance for a server that also serves traffic.
+const (
+	argonMemory  = 64 * 1024
+	argonTime    = 3
+	argonThreads = 2
+	argonKeyLen  = 32
+	argonSaltLen = 16
+
+	// MinPasswordLength — length beats composition rules.
+	MinPasswordLength = 12
+)
+
+var (
+	ErrInvalidHash      = errors.New("security: invalid password hash format")
+	ErrPasswordTooShort = fmt.Errorf("security: password must be at least %d characters", MinPasswordLength)
+	ErrPasswordBreached = errors.New("security: password appears in a known breach list")
+	ErrPasswordTrivial  = errors.New("security: password is too predictable")
+)
+
+// HashPassword returns an argon2id PHC-format hash.
+func HashPassword(plain string) (string, error) {
+	salt := make([]byte, argonSaltLen)
+	if _, err := rand.Read(salt); err != nil {
+		return "", fmt.Errorf("security: salt: %w", err)
+	}
+	key := argon2.IDKey([]byte(plain), salt, argonTime, argonMemory, argonThreads, argonKeyLen)
+	return fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",
+		argon2.Version, argonMemory, argonTime, argonThreads,
+		base64.RawStdEncoding.EncodeToString(salt),
+		base64.RawStdEncoding.EncodeToString(key)), nil
+}
+
+// VerifyPassword compares a plaintext password against a stored hash in
+// constant time.
+func VerifyPassword(plain, encoded string) (bool, error) {
+	parts := strings.Split(encoded, "$")
+	if len(parts) != 6 || parts[1] != "argon2id" {
+		return false, ErrInvalidHash
+	}
+	var version int
+	if _, err := fmt.Sscanf(parts[2], "v=%d", &version); err != nil {
+		return false, ErrInvalidHash
+	}
+	var memory uint32
+	var timeCost uint32
+	var threads uint8
+	if _, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &memory, &timeCost, &threads); err != nil {
+		return false, ErrInvalidHash
+	}
+	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
+	if err != nil {
+		return false, ErrInvalidHash
+	}
+	want, err := base64.RawStdEncoding.DecodeString(parts[5])
+	if err != nil {
+		return false, ErrInvalidHash
+	}
+	// Bound the stored key length before converting it: a hash field is
+	// attacker-influenced if a database is ever tampered with, and an
+	// unchecked conversion is how that becomes a panic or a weak comparison.
+	if len(want) < 16 || len(want) > 1024 {
+		return false, ErrInvalidHash
+	}
+	// #nosec G115 -- the length is bounded to 16..1024 immediately above.
+	keyLen := uint32(len(want))
+	got := argon2.IDKey([]byte(plain), salt, timeCost, memory, threads, keyLen)
+	return subtle.ConstantTimeCompare(got, want) == 1, nil
+}
+
+// commonPasswords is a small local breach list. It is deliberately local — no
+// password, hashed or otherwise, is ever sent to a third party.
+var commonPasswords = map[string]bool{
+	"password": true, "password123": true, "123456789012": true, "qwertyuiop12": true,
+	"administrator": true, "letmein12345": true, "welcome12345": true, "iloveyou1234": true,
+	"theniethenie": true, "catering1234": true, "jakarta12345": true, "indonesia123": true,
+	"gadingserpong": true, "healthycater": true,
+}
+
+// ValidatePassword enforces the password policy: length first, then a breach
+// check, then a triviality check. No composition theatre.
+func ValidatePassword(plain string) error {
+	if len([]rune(plain)) < MinPasswordLength {
+		return ErrPasswordTooShort
+	}
+	if commonPasswords[strings.ToLower(plain)] {
+		return ErrPasswordBreached
+	}
+	if isSingleClassRepeat(plain) {
+		return ErrPasswordTrivial
+	}
+	return nil
+}
+
+// isSingleClassRepeat catches "aaaaaaaaaaaa" and "111111111111".
+func isSingleClassRepeat(s string) bool {
+	if len(s) == 0 {
+		return true
+	}
+	first := rune(s[0])
+	same := true
+	for _, r := range s {
+		if r != first {
+			same = false
+			break
+		}
+	}
+	if same {
+		return true
+	}
+	// all digits and strictly ascending or descending, e.g. 123456789012
+	digits := true
+	for _, r := range s {
+		if !unicode.IsDigit(r) {
+			digits = false
+			break
+		}
+	}
+	return digits && (isSequential(s, 1) || isSequential(s, -1))
+}
+
+func isSequential(s string, step int) bool {
+	for i := 1; i < len(s); i++ {
+		if int(s[i])-int(s[i-1]) != step {
+			return false
+		}
+	}
+	return true
+}
+
+// dummyHash is a real argon2id hash of a value nobody uses. It exists so that
+// VerifyPasswordDummy costs the same as a genuine verification.
+const dummyHash = "$argon2id$v=19$m=65536,t=3,p=2$" +
+	"ZG9lc25vdG1hdHRlcnNhbHQxMg$" +
+	"c2VudGluZWxrZXl0aGF0aXNuZXZlcmVxdWFsdG9hbnl0aGluZw"
+
+// VerifyPasswordDummy performs a throwaway verification so that a login for an
+// address that does not exist takes about as long as one for an address that
+// does.
+//
+// Without it, "no such user" returns in microseconds while a real user costs a
+// full argon2id derivation — and that timing difference is a working
+// account-enumeration oracle, which is exactly what the identical error
+// messages elsewhere are there to prevent.
+func VerifyPasswordDummy() {
+	_, _ = VerifyPassword("not-the-password", dummyHash)
+}

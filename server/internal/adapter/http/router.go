@@ -6,7 +6,6 @@
 package http
 
 import (
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -17,23 +16,28 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/stevenwilliam/thenie_v2/server/internal/app/admin"
 	"github.com/stevenwilliam/thenie_v2/server/internal/app/ports"
 	"github.com/stevenwilliam/thenie_v2/server/internal/app/siteconfig"
 	"github.com/stevenwilliam/thenie_v2/server/internal/platform/apierror"
 	"github.com/stevenwilliam/thenie_v2/server/internal/platform/logging"
+	"github.com/stevenwilliam/thenie_v2/server/internal/platform/security"
 )
 
 // Deps are what the router needs wired in.
 type Deps struct {
-	Config      *siteconfig.Service
-	Menu        ports.MenuRepository
-	Params      ports.ParamRepository
-	Rates       ports.RateRepository
-	Rules       ports.RulesRepository
-	Log         *slog.Logger
-	AdminToken  string
-	CORSOrigins []string
-	Version     string
+	Config       *siteconfig.Service
+	Menu         ports.MenuRepository
+	Params       ports.ParamRepository
+	Rates        ports.RateRepository
+	Rules        ports.RulesRepository
+	Admin        *admin.Service
+	Log          *slog.Logger
+	AdminToken   string
+	SecureCookie bool
+	AdminUI      http.Handler
+	CORSOrigins  []string
+	Version      string
 }
 
 // New builds the router.
@@ -67,20 +71,52 @@ func New(d Deps) *gin.Engine {
 		v1.POST("/quote", postQuote(d.Config))
 	}
 
-	admin := r.Group("/api/v1/admin", requireAdmin(d.AdminToken))
+	// Every actor is resolved once, up front. Authorisation is then per-route
+	// and deny-by-default: a handler is only reachable through a requirePerm
+	// gate, so adding a route without one makes it unreachable rather than
+	// public.
+	authed := r.Group("/api/v1/admin", resolveActor(d.Admin))
 	{
-		admin.GET("/params", listParams(d.Params))
-		admin.PUT("/params/:key", setParam(d.Params, d.Config))
-		admin.PUT("/plans/:slug/rates", setPlanRates(d.Rates, d.Config))
-		admin.PUT("/tier-products/:slug/packages/:name/prices", setTierPrices(d.Rates, d.Config))
-		admin.PUT("/kantor/:grade/:period/rates", setKantorRates(d.Rates, d.Config))
-		admin.PUT("/menu/cycles", upsertCycle(d.Menu, d.Config))
-		admin.POST("/menu/cycles/:year/:week/publish", publishCycle(d.Menu, d.Config, true))
-		admin.POST("/menu/cycles/:year/:week/unpublish", publishCycle(d.Menu, d.Config, false))
-		admin.DELETE("/menu/cycles/:year/:week", deleteCycle(d.Menu, d.Config))
-		admin.GET("/pricing-rules", getPricingRules(d.Config))
-		admin.PUT("/pricing-rules", setPricingRules(d.Rules, d.Config))
-		admin.GET("/validate", validateDocument(d.Config))
+		authed.POST("/auth/login", login(d.Admin, d.SecureCookie))
+		authed.POST("/auth/logout", logout(d.Admin, d.SecureCookie))
+		authed.GET("/auth/me", me())
+
+		authed.GET("/params", requirePerm(security.PermContentRead), listParams(d.Params))
+		authed.PUT("/params/:key", requirePerm(security.PermContentWrite), setParam(d.Params, d.Config, d.Admin))
+
+		authed.GET("/pricing-rules", requirePerm(security.PermRulesRead), getPricingRules(d.Config))
+		authed.PUT("/pricing-rules", requirePerm(security.PermRulesWrite), setPricingRules(d.Rules, d.Config, d.Admin))
+
+		authed.PUT("/plans/:slug/rates", requirePerm(security.PermPriceWrite), setPlanRates(d.Rates, d.Config, d.Admin))
+		authed.PUT("/tier-products/:slug/packages/:name/prices", requirePerm(security.PermPriceWrite), setTierPrices(d.Rates, d.Config, d.Admin))
+		authed.PUT("/kantor/:grade/:period/rates", requirePerm(security.PermPriceWrite), setKantorRates(d.Rates, d.Config, d.Admin))
+
+		authed.PUT("/menu/cycles", requirePerm(security.PermMenuWrite), upsertCycle(d.Menu, d.Config, d.Admin))
+		authed.POST("/menu/cycles/:year/:week/publish", requirePerm(security.PermMenuPublish), publishCycle(d.Menu, d.Config, d.Admin, true))
+		authed.POST("/menu/cycles/:year/:week/unpublish", requirePerm(security.PermMenuPublish), publishCycle(d.Menu, d.Config, d.Admin, false))
+		authed.DELETE("/menu/cycles/:year/:week", requirePerm(security.PermMenuWrite), deleteCycle(d.Menu, d.Config, d.Admin))
+
+		authed.GET("/validate", requirePerm(security.PermContentRead), validateDocument(d.Config))
+
+		authed.GET("/users", requirePerm(security.PermUserManage), listUsers(d.Admin))
+		authed.POST("/users", requirePerm(security.PermUserManage), createUser(d.Admin))
+		authed.PUT("/users/:id", requirePerm(security.PermUserManage), updateUser(d.Admin))
+		authed.PUT("/users/:id/roles", requirePerm(security.PermUserManage), setUserRoles(d.Admin))
+		authed.PUT("/users/:id/password", requirePerm(security.PermUserManage), setUserPassword(d.Admin))
+		authed.DELETE("/users/:id", requirePerm(security.PermUserManage), deleteUser(d.Admin))
+
+		authed.GET("/roles", requirePerm(security.PermUserManage), listRoles(d.Admin))
+		authed.PUT("/roles/:code/permissions", requirePerm(security.PermUserManage), setRolePermissions(d.Admin))
+
+		authed.GET("/audit", requirePerm(security.PermAuditRead), listAudit(d.Admin))
+	}
+
+	// The admin UI itself. Static assets only — every byte of authority is in
+	// the API above, so serving the page to an anonymous visitor reveals
+	// nothing but a login form.
+	if d.AdminUI != nil {
+		r.GET("/admin", func(c *gin.Context) { c.Redirect(http.StatusFound, "/admin/") })
+		r.Any("/admin/*filepath", gin.WrapH(http.StripPrefix("/admin/", d.AdminUI)))
 	}
 
 	r.NoRoute(func(c *gin.Context) {
@@ -236,28 +272,6 @@ func renderErrors(c *gin.Context, log *slog.Logger) {
 	c.AbortWithStatusJSON(ae.Status, gin.H{"error": body})
 }
 
-// requireAdmin gates every write behind a shared bearer token.
-//
-// The comparison is length-then-constant-time. A plain == would leak the token
-// one byte at a time to anyone willing to time enough requests, and this token
-// is the only thing standing between the internet and the price list.
-func requireAdmin(token string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if token == "" {
-			_ = c.Error(apierror.Forbidden("Admin API is disabled: no ADMIN_TOKEN is configured."))
-			c.Abort()
-			return
-		}
-		got := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
-		if !constantTimeEqual(got, token) {
-			_ = c.Error(apierror.Unauthorized("Missing or invalid admin token."))
-			c.Abort()
-			return
-		}
-		c.Next()
-	}
-}
-
 func cors(origins []string) gin.HandlerFunc {
 	allowed := map[string]bool{}
 	for _, o := range origins {
@@ -300,17 +314,4 @@ func pathInt(c *gin.Context, key string) (int, error) {
 			map[string]any{key: c.Param(key)})
 	}
 	return n, nil
-}
-
-var errEmptyToken = errors.New("empty token")
-
-func constantTimeEqual(a, b string) bool {
-	if len(a) != len(b) || len(a) == 0 {
-		return false
-	}
-	var diff byte
-	for i := 0; i < len(a); i++ {
-		diff |= a[i] ^ b[i]
-	}
-	return diff == 0
 }
