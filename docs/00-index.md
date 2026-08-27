@@ -27,6 +27,7 @@ _Capture date: **2026-08-27**. SHA-256 `b66ed302…` — see
 | 09 | [[09-open-questions]] | What the site does not answer |
 | 13 | [[13-production-deployment-runbook]] | Deploy to the Ubuntu + Nginx server |
 | 15 | [[15-backend-engine]] | The Go + PostgreSQL service that makes the content editable |
+| 16 | [[16-server-side-pricing]] | The order calculator on the backend, and configurable price rules |
 | 14 | [[14-overlays]] | The overlay mechanism — our only additions to the mirror |
 |  — | [[PROGRESS]] | Build status |
 |  — | `screenshots/` | Rendered evidence — all six pages, desktop and mobile |

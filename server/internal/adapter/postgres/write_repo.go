@@ -13,6 +13,7 @@ import (
 	"github.com/stevenwilliam/thenie_v2/server/internal/app/ports"
 	"github.com/stevenwilliam/thenie_v2/server/internal/app/siteconfig"
 	"github.com/stevenwilliam/thenie_v2/server/internal/domain/menu"
+	"github.com/stevenwilliam/thenie_v2/server/internal/domain/pricing"
 	"github.com/stevenwilliam/thenie_v2/server/internal/platform/apierror"
 	"github.com/stevenwilliam/thenie_v2/server/internal/platform/id"
 )
@@ -366,4 +367,34 @@ func translate(err error) error {
 		return apierror.Conflict(apierror.CodeConflict, "That record already exists.")
 	}
 	return err
+}
+
+// RulesRepo is the write side of the pricing rules.
+type RulesRepo struct{ db *gorm.DB }
+
+func NewRulesRepo(db *gorm.DB) *RulesRepo { return &RulesRepo{db: db} }
+
+func (r *RulesRepo) SetPricingRules(ctx context.Context, in pricing.Rules) error {
+	res := r.db.WithContext(ctx).Exec(`
+		UPDATE pricing_rules SET
+			weekly_min_days                   = ?,
+			monthly_min_days                  = ?,
+			consecutive_flexi_weekly_max_days = ?,
+			flexi_monthly_max_span_days       = ?,
+			weekday_routine_max_span_days     = ?,
+			weekly_routine_max_span_days      = ?,
+			weekly_routine_min_days_in_week   = ?,
+			pax_table_max_pax                 = ?,
+			updated_at = now()
+		WHERE only_row`,
+		in.WeeklyMinDays, in.MonthlyMinDays, in.ConsecutiveFlexiWeeklyMaxDays,
+		in.FlexiMonthlyMaxSpanDays, in.WeekdayRoutineMaxSpanDays,
+		in.WeeklyRoutineMaxSpanDays, in.WeeklyRoutineMinDaysInWeek, in.PaxTableMaxPax)
+	if res.Error != nil {
+		return translate(res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return apierror.NotFound("The pricing_rules row is missing; run migrations.")
+	}
+	return nil
 }

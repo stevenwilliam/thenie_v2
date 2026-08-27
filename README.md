@@ -106,6 +106,7 @@ Start at [docs/00-index.md](docs/00-index.md).
 | [13](docs/13-production-deployment-runbook.md) | **Deploy it** |
 | [14](docs/14-overlays.md) | The overlay mechanism |
 | [15](docs/15-backend-engine.md) | **The backend engine** — menus as data, not markup |
+| [16](docs/16-server-side-pricing.md) | **Server-side pricing** — the calculator in Go, rules as config |
 
 ## Deploying
 

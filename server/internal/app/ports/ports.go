@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"github.com/stevenwilliam/thenie_v2/server/internal/app/siteconfig"
+	"github.com/stevenwilliam/thenie_v2/server/internal/domain/pricing"
 )
 
 // ConfigRepository reads the whole public configuration surface.
@@ -77,4 +78,10 @@ type RateRepository interface {
 	SetPlanRates(ctx context.Context, planSlug string, r siteconfig.Rates) error
 	SetTierPrices(ctx context.Context, productSlug, packageName string, bands []siteconfig.Band) error
 	SetKantorRates(ctx context.Context, grade, period string, bands []siteconfig.Band) error
+}
+
+// RulesRepository is the write side of the pricing rules -- the thresholds the
+// tier classifier compares against.
+type RulesRepository interface {
+	SetPricingRules(ctx context.Context, r pricing.Rules) error
 }

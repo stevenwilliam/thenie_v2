@@ -144,6 +144,7 @@ func serve(ctx context.Context, cfg *config.Config, log *slogLogger) error {
 		Menu:        postgres.NewMenuRepo(db),
 		Params:      postgres.NewParamRepo(db),
 		Rates:       postgres.NewRateRepo(db),
+		Rules:       postgres.NewRulesRepo(db),
 		Log:         log,
 		AdminToken:  cfg.AdminToken,
 		CORSOrigins: cfg.CORSOrigins,

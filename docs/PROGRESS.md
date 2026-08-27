@@ -154,13 +154,32 @@ Only these changed:
 | **Page survives the API being down** | ✅ | service stopped → page renders fully, 299 calendar cells, one info line |
 | Bug found and fixed during the build | ✅ | `translate()` asserted `*pq.Error`; gorm uses pgx, so every constraint violation returned 500. Now typed, with a test |
 
-### The one thing it deliberately does not do
+## 11. Server-side pricing (`internal/domain/pricing`)
 
-Change what the order calculator charges. The order app captures `data-rates`
-into a closure before any overlay runs, so the overlay **checks** rates and
-reports drift rather than writing them — writing would change the displayed
-price without changing the calculated one. Documented in
-[[15-backend-engine]] with the twenty-line fix if it ever matters.
+| Item | Status | Evidence |
+|------|--------|----------|
+| `analyze()` ported to Go | ✅ | the six-tier classifier, branch order preserved |
+| `render()` / `recalc()` / Kantor money paths ported | ✅ | totals, pax table, add-ons, tier products, weekday walk |
+| **Proven equivalent to the shipped engine** | ✅ | **758/758** cases from the real `analyze()` out of the mirror |
+| Fixture covers every tier | ✅ | daily 85 · weekly 84 · monthly 147 · flexi 85 · flexi-weekly 300 · flexi-monthly 57 |
+| Fixture is deterministic | ✅ | seeded PRNG, so a regenerated file diffs only on real upstream change |
+| Money-path unit tests | ✅ | pax table incl. linear extension, Flexi meat cap, add-on day matching, Kantor walk |
+| `Math.round` half-up reproduced with integers | ✅ | `roundHalfUp`, tested on the `.5` boundary |
+| **Parity through the real UI** | ✅ | headless browser drove 8 card configurations — **8/8 MATCH** |
+| Price rules configurable | ✅ | 8 thresholds in one typed row; changing `weekly_min_days` 5→6 moved an order from Rp190,000 to Rp250,000 |
+| Incoherent rule sets refused twice | ✅ | domain check with both values named, then a database CHECK |
+| `POST /api/v1/quote` | ✅ | carries codes, never prices — a caller cannot propose a rate |
+| `verify` mode | ✅ | shadow-quotes and logs disagreement; never blocks, never changes what is charged |
+| `authoritative` mode | ✅ | with the rules deliberately changed, the cart took the server's Rp250,000 over the page's Rp190,000 |
+
+### What is still out of reach
+
+The page's own calculator keeps the **captured** `data-rates` until a re-capture,
+because the order app closes over them before any overlay runs. In
+`authoritative` mode the server's figure wins anyway; in `verify` mode a drift is
+logged rather than silent. The clean fix — inject the config into `<head>` at
+build time, before the app script — is about twenty lines and is v2 work.
+Documented in [[16-server-side-pricing]] §4.
 
 ## 9. Not done
 
@@ -171,7 +190,8 @@ price without changing the calculated one. Documented in
 | SEO baseline | ⬜ | same reason — Q-13 |
 | Image deduplication (1.06 MB, 16%) | ⬜ | same reason — Q-15 |
 | Self-hosted font | ⬜ | same reason — Q-24 |
-| Backend for **orders** (persistence, submission) | ⬜ | the config engine does not take orders — Q-1 to Q-4 |
+| Backend for **orders** (persistence, submission) | ⬜ | the config engine quotes but does not take orders — Q-1 to Q-4 |
+| Head-injection so the page's own calculator follows the database | ⬜ | ~20 lines; would close the last gap in [[16-server-side-pricing]] §4 |
 | Hydrating the Harga tables, areas, windows, testimonials | ⬜ | stored and served; not yet wired into the DOM |
 | Admin UI | ⬜ | API only today; `curl` or any REST client |
 | systemd unit + Nginx `/api/` proxy on the server | ⬜ | documented in [[15-backend-engine]], not yet applied |

@@ -165,6 +165,32 @@ THENIE_API_BASE=https://api.thenie.id/api/v1 ./scripts/build-site.sh
 Leaving it unset is correct — and simpler — when Nginx proxies `/api/` to the
 service on the same host, because then no CORS configuration is needed either.
 
+### `pricing.html` — server-side pricing
+
+**Added:** 2026-08-27
+
+Reads the order card's state out of the DOM, asks the backend for a quote, and
+either reports the difference or overrides the page's figure. Full detail in
+[[16-server-side-pricing]].
+
+Two modes, set by the `order.pricing_mode` parameter:
+
+- **`verify` (default)** — shadow-quote and log any disagreement. Never blocks,
+  never changes what is charged. If this script broke entirely the page would
+  price exactly as it does today.
+- **`authoritative`** — the server's number goes in the cart. Verified end to
+  end: with the rules deliberately changed so the two engines disagreed, the
+  cart took the server's Rp 250.000 over the page's Rp 190.000.
+
+Two implementation details worth knowing before editing it:
+
+- It reads selected dates from **the date chips' `data-d` attributes**, not the
+  calendar cells. The calendar renders one month at a time, so its selected
+  cells are not a complete list; the chips are.
+- `authoritative` intercepts add-to-cart in the **capture phase on `document`**.
+  At the target element listeners fire in registration order and the page
+  registered first, so a listener on the button itself could never run before it.
+
 ---
 
 ## Verifying an overlay reached production
@@ -218,5 +244,6 @@ published instead of `dist/index.html`.
 | 2026-08-27 | `whatsapp-fab.html` | **Removed** — the new capture ships its own |
 | 2026-08-27 | `fab-clearance.html` | **Added** — keeps the capture's own button clear of the cart bar and the nav pill |
 | 2026-08-27 | `hydrate.html` | **Added** — fetches content from the backend engine and rewrites the weekly menus in place |
+| 2026-08-27 | `pricing.html` | **Added** — quotes each order card against the backend calculator; reports or overrides |
 
 Related: [[07-fidelity-and-verification]] · [[13-production-deployment-runbook]] · [[03-site-structure]]

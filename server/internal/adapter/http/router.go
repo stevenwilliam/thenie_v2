@@ -29,6 +29,7 @@ type Deps struct {
 	Menu        ports.MenuRepository
 	Params      ports.ParamRepository
 	Rates       ports.RateRepository
+	Rules       ports.RulesRepository
 	Log         *slog.Logger
 	AdminToken  string
 	CORSOrigins []string
@@ -59,6 +60,11 @@ func New(d Deps) *gin.Engine {
 		v1.GET("/site-config", getSiteConfig(d.Config))
 		v1.HEAD("/site-config", getSiteConfig(d.Config))
 		v1.GET("/site-config/revision", getRevision(d.Config))
+		// Pricing is a POST because the request carries a date set, not because
+		// it mutates anything. It is public for the same reason site-config is:
+		// the page already computes these numbers in the browser, so the server
+		// answering the same question reveals nothing new.
+		v1.POST("/quote", postQuote(d.Config))
 	}
 
 	admin := r.Group("/api/v1/admin", requireAdmin(d.AdminToken))
@@ -72,6 +78,8 @@ func New(d Deps) *gin.Engine {
 		admin.POST("/menu/cycles/:year/:week/publish", publishCycle(d.Menu, d.Config, true))
 		admin.POST("/menu/cycles/:year/:week/unpublish", publishCycle(d.Menu, d.Config, false))
 		admin.DELETE("/menu/cycles/:year/:week", deleteCycle(d.Menu, d.Config))
+		admin.GET("/pricing-rules", getPricingRules(d.Config))
+		admin.PUT("/pricing-rules", setPricingRules(d.Rules, d.Config))
 		admin.GET("/validate", validateDocument(d.Config))
 	}
 

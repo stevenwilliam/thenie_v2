@@ -10,7 +10,11 @@
 // already use, so the overlay never has to translate between two conventions.
 package siteconfig
 
-import "time"
+import (
+	"time"
+
+	"github.com/stevenwilliam/thenie_v2/server/internal/domain/pricing"
+)
 
 // Document is the whole public configuration surface.
 type Document struct {
@@ -20,6 +24,12 @@ type Document struct {
 	Revision    int64     `json:"revision"`
 	GeneratedAt time.Time `json:"generated_at"`
 	Timezone    string    `json:"timezone"`
+
+	// PricingRules are the thresholds the tier classifier compares against.
+	// They ship in the public document deliberately: the front end's own
+	// calculator hard-codes the same numbers, so publishing them is what makes
+	// a drift between the two detectable from the browser.
+	PricingRules pricing.Rules `json:"pricing_rules"`
 
 	Plans           []Plan             `json:"plans"`
 	Kantor          Kantor             `json:"kantor"`

@@ -1,0 +1,343 @@
+<!-- ─────────────────────────────────────────────────────────────────────────
+     Server-side pricing (overlay — NOT part of the captured mirror).
+     Injected before the closing body tag by scripts/build-site.sh.
+     See docs/16-server-side-pricing.md.
+
+     The captured page computes every price in the browser. internal/domain/pricing
+     is that same arithmetic in Go, proven equivalent by a differential test over
+     758 date shapes. This script connects the two.
+
+     THE CONSTRAINT THAT SHAPES ALL OF THIS
+     The order app runs inside a closed IIFE. It captures data-rates into a
+     closure at parse time, and every overlay is injected AFTER that script has
+     already run. So this cannot replace the page's calculator — it can only sit
+     beside it, read the same inputs out of the DOM, ask the server, and then
+     either report or override.
+
+     TWO MODES, chosen by the sys_parameter order.pricing_mode:
+
+       verify (default)  Shadow-quote every change and report disagreement.
+                         Never blocks, never changes what is charged. Zero risk:
+                         if this script broke entirely the page would price
+                         exactly as it does today.
+
+       authoritative     The server's number is the one that goes in the cart.
+                         Adding to the order waits for a quote; if the API fails
+                         or is slow, it falls back to the page's own figure
+                         rather than blocking a customer from ordering.
+
+     Start in verify. Move to authoritative once the parity log is quiet — which
+     is the honest order to do it in, because verify is what tells you the two
+     engines actually agree on YOUR data.
+     ───────────────────────────────────────────────────────────────────────── -->
+<script>
+(function () {
+  "use strict";
+
+  var MODE_VERIFY = "verify";
+  var MODE_AUTH = "authoritative";
+  var QUOTE_TIMEOUT_MS = 4000;
+  var DEBOUNCE_MS = 220;
+
+  function apiBase() {
+    if (typeof window.THENIE_API_BASE === "string" && window.THENIE_API_BASE) {
+      return window.THENIE_API_BASE.replace(/\/+$/, "");
+    }
+    var meta = document.querySelector('meta[name="thenie-api"]');
+    if (meta && meta.content) return meta.content.replace(/\/+$/, "");
+    return "/api/v1";
+  }
+
+  function log(level, msg, extra) {
+    if (typeof console === "undefined" || !console[level]) return;
+    if (extra !== undefined) console[level]("[thenie/pricing] " + msg, extra);
+    else console[level]("[thenie/pricing] " + msg);
+  }
+
+  // ---- reading the page's own state -------------------------------------
+
+  // The calendar only renders one month at a time, so the selected cells are
+  // not a complete list. The date chips are: each carries its remove button
+  // with the full ISO date in data-d, for every selected date in every month.
+  function selectedDates(card) {
+    var out = [];
+    var chips = card.querySelectorAll(".date-chips button[data-d]");
+    for (var i = 0; i < chips.length; i++) out.push(chips[i].getAttribute("data-d"));
+    if (out.length) return out;
+
+    // Nasi Bento / Kuning / Acara mirror their picks into a hidden input.
+    var hidden = card.querySelector(".cust-dates-item");
+    if (hidden && hidden.value) {
+      return hidden.value.split(",").filter(Boolean);
+    }
+    return out;
+  }
+
+  function intVal(node, fallback) {
+    if (!node) return fallback;
+    var n = parseInt(node.value, 10);
+    return isNaN(n) ? fallback : n;
+  }
+
+  function checkedAddons(card) {
+    var out = [];
+    var boxes = card.querySelectorAll(".addon-cb");
+    for (var i = 0; i < boxes.length; i++) {
+      var cb = boxes[i];
+      if (!cb.checked || cb.disabled) continue;
+      var entry = { code: cb.value };
+      // A checked add-on renders day chips; the selected ones are what it is
+      // actually charged for. No chips means "every eligible date", which the
+      // server also treats as the default.
+      var item = cb.closest(".addon-item");
+      if (item) {
+        var chips = item.querySelectorAll(".addon-day-chip");
+        if (chips.length) {
+          var days = [];
+          for (var j = 0; j < chips.length; j++) {
+            if (chips[j].className.indexOf("selected") !== -1) {
+              days.push(chips[j].getAttribute("data-date"));
+            }
+          }
+          // All chips selected is the default, so sending nothing keeps the
+          // request smaller and the intent clearer.
+          if (days.length && days.length !== chips.length) entry.dates = days;
+          else if (!days.length) entry.dates = ["__none__"]; // opted out of every day
+        }
+      }
+      out.push(entry);
+    }
+    return out;
+  }
+
+  // Maps a card element to a quote request. Returns null when the card is not
+  // in a quotable state (no dates yet), which is the common case while the
+  // customer is still choosing.
+  function buildRequest(card, cfg) {
+    var sub = card.getAttribute("data-sub");
+
+    if (card.id === "kantor-card") {
+      var dateEl = card.querySelector(".cust-date-item");
+      if (!dateEl || !dateEl.value) return null;
+      var jenis = card.querySelector("#kantor-jenis-grid .plan-opt.selected");
+      var periode = card.querySelector("#kantor-periode-grid .plan-opt.selected");
+      return {
+        kind: "kantor",
+        grade: jenis ? jenis.getAttribute("data-jenis") : "reguler",
+        period: periode ? periode.getAttribute("data-periode") : "mingguan",
+        pax: intVal(document.getElementById("kantor-pax"), 5),
+        start_date: dateEl.value,
+        addons: checkedAddons(card)
+      };
+    }
+
+    var dates = selectedDates(card);
+    if (!dates.length) return null;
+
+    if (card.hasAttribute("data-rates")) {
+      var plan = cfg.planSlugByCardKey[sub];
+      if (!plan) return null;
+      var rice = null;
+      var riceBtn = card.querySelector(".nasi-toggle .nasi-opt.selected");
+      if (riceBtn) rice = riceBtn.getAttribute("data-nasi");
+      var req = {
+        kind: "subscription",
+        plan: plan,
+        pax: intVal(card.querySelector(".q-input"), 1),
+        dates: dates,
+        addons: checkedAddons(card)
+      };
+      if (rice) req.rice = rice;
+      return req;
+    }
+
+    // Tier-priced card. The selected .plan-opt names the package.
+    var product = cfg.productSlugByCardKey[sub];
+    if (!product) return null;
+    var opt = card.querySelector(".plan-grid .plan-opt.selected .plan-name");
+    return {
+      kind: "tier_product",
+      product: product,
+      package: opt ? opt.textContent.trim() : "",
+      qty: intVal(card.querySelector(".q-input"), 1),
+      dates: dates,
+      addons: checkedAddons(card)
+    };
+  }
+
+  // ---- talking to the server --------------------------------------------
+
+  function quote(req) {
+    var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    var timer = controller ? window.setTimeout(function () { controller.abort(); }, QUOTE_TIMEOUT_MS) : null;
+    return fetch(apiBase() + "/quote", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req),
+      credentials: "omit",
+      signal: controller ? controller.signal : undefined
+    }).then(function (res) {
+      if (timer) window.clearTimeout(timer);
+      if (!res.ok) return res.json().then(function (b) { throw new Error(b && b.error ? b.error.message : "HTTP " + res.status); });
+      return res.json();
+    }).catch(function (err) {
+      if (timer) window.clearTimeout(timer);
+      throw err;
+    });
+  }
+
+  // The page renders "Rp 1.234.567"; strip everything that is not a digit.
+  function readShownTotal(card) {
+    var out = card.querySelector(".price-out");
+    if (!out) return null;
+    var digits = out.textContent.replace(/[^\d]/g, "");
+    return digits ? parseInt(digits, 10) : null;
+  }
+
+  function formatIDR(v) {
+    return "Rp " + String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  }
+
+  // ---- the two modes ------------------------------------------------------
+
+  var mismatches = 0;
+
+  function applyQuote(card, req, res, mode) {
+    var shown = readShownTotal(card);
+    var server = res.total;
+
+    if (shown !== null && shown !== server) {
+      mismatches++;
+      log("warn",
+        "the page and the server disagree on this card's total. " +
+        "page=" + formatIDR(shown) + " server=" + formatIDR(server),
+        { card: card.getAttribute("data-sub") || card.id, request: req, server: res });
+    }
+
+    if (mode !== MODE_AUTH) return;
+
+    // Authoritative: make the server's number the one that reaches the cart.
+    // card._current is a plain property on the element, so it is reachable from
+    // here even though the calculator that wrote it is not.
+    if (!card._current) return;
+    card._current.total = server;
+    var out = card.querySelector(".price-out");
+    if (out) out.textContent = formatIDR(server);
+    card._serverQuoteAt = Date.now();
+  }
+
+  function attach(card, cfg, mode) {
+    var timer = null;
+    var inFlight = 0;
+
+    function refresh() {
+      var req = buildRequest(card, cfg);
+      if (!req) return;
+      inFlight++;
+      card._quotePending = inFlight;
+      quote(req).then(function (res) {
+        inFlight--;
+        card._quotePending = inFlight;
+        applyQuote(card, req, res, mode);
+      }).catch(function (err) {
+        inFlight--;
+        card._quotePending = inFlight;
+        // A failed quote must never stop the customer ordering. In verify mode
+        // this is noise; in authoritative mode the page's own figure stands.
+        log("info", "quote unavailable, keeping the page's own figure", err && err.message);
+      });
+    }
+
+    // The page re-renders on every input, click and change. Debounce so a
+    // customer dragging the pax stepper does not fire twenty requests.
+    function schedule() {
+      if (timer) window.clearTimeout(timer);
+      // setTimeout also defers past the page's own synchronous render(), so the
+      // DOM we read is the state AFTER the page has finished updating it.
+      timer = window.setTimeout(refresh, DEBOUNCE_MS);
+    }
+
+    card.addEventListener("input", schedule, false);
+    card.addEventListener("change", schedule, false);
+    card.addEventListener("click", schedule, false);
+    schedule();
+  }
+
+  // ---- run ----------------------------------------------------------------
+
+  function start(doc) {
+    var mode = (doc.params && doc.params["order.pricing_mode"]) || MODE_VERIFY;
+    if (mode !== MODE_VERIFY && mode !== MODE_AUTH) mode = MODE_VERIFY;
+
+    // Map the page's data-sub values onto the API's slugs, from the config
+    // document rather than a hard-coded table, so renaming a plan upstream
+    // does not silently break quoting.
+    var cfg = { planSlugByCardKey: {}, productSlugByCardKey: {} };
+    (doc.plans || []).forEach(function (p) { cfg.planSlugByCardKey[p.card_key] = p.slug; });
+    (doc.tier_products || []).forEach(function (p) { cfg.productSlugByCardKey[p.card_key] = p.slug; });
+
+    var cards = document.querySelectorAll(".order-card");
+    var attached = 0;
+    for (var i = 0; i < cards.length; i++) {
+      try {
+        attach(cards[i], cfg, mode);
+        attached++;
+      } catch (err) {
+        log("warn", "could not attach to a card", err);
+      }
+    }
+
+    if (mode === MODE_AUTH) {
+      // Adding to the order should use a fresh server figure. Intercept in the
+      // CAPTURE phase on document: at the target itself, listeners fire in
+      // registration order and the page registered first, so a listener on the
+      // button could never run before it. On an ancestor, capture wins.
+      document.addEventListener("click", function (e) {
+        var btn = e.target && e.target.closest ? e.target.closest(".add-btn") : null;
+        if (!btn) return;
+        var card = btn.closest(".order-card");
+        if (!card || !card._current) return;
+        if (card._quotePending) {
+          // A quote is in flight. Let it land rather than banking a stale
+          // number — but never hold the customer for longer than the timeout.
+          var age = Date.now() - (card._serverQuoteAt || 0);
+          if (age > QUOTE_TIMEOUT_MS) return; // stale enough; let the page win
+          e.stopPropagation();
+          e.preventDefault();
+          log("info", "waiting for the server quote before adding to the order");
+          window.setTimeout(function () { btn.click(); }, DEBOUNCE_MS);
+        }
+      }, true);
+    }
+
+    window.__theniePricing = {
+      mode: mode,
+      quote: quote,
+      buildRequest: function (card) { return buildRequest(card, cfg); },
+      mismatches: function () { return mismatches; }
+    };
+    log("info", "server-side pricing attached to " + attached + " card(s), mode=" + mode);
+  }
+
+  function boot() {
+    // Reuse whatever hydrate.html already fetched rather than asking twice.
+    if (window.__thenieConfig) { start(window.__thenieConfig); return; }
+    fetch(apiBase() + "/site-config", { credentials: "omit" })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(start)
+      .catch(function (err) {
+        log("info", "no config available; the page keeps its own calculator", err && err.message);
+      });
+  }
+
+  if (typeof fetch !== "function" || typeof Promise !== "function" ||
+      typeof Element === "undefined" || !Element.prototype.closest) {
+    log("info", "browser too old; the page keeps its own calculator");
+  } else if (document.readyState === "loading") {
+    // Wait for hydrate.html to have populated window.__thenieConfig where it can.
+    document.addEventListener("DOMContentLoaded", function () { window.setTimeout(boot, 300); });
+  } else {
+    window.setTimeout(boot, 300);
+  }
+})();
+</script>

@@ -18,6 +18,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/stevenwilliam/thenie_v2/server/internal/app/siteconfig"
+	"github.com/stevenwilliam/thenie_v2/server/internal/domain/pricing"
 )
 
 // ConfigRepo reads the public configuration surface.
@@ -62,6 +63,7 @@ func (r *ConfigRepo) Load(ctx context.Context) (*siteconfig.Document, error) {
 			name string
 			fn   func(*gorm.DB, *siteconfig.Document) error
 		}{
+			{"pricing rules", loadPricingRules},
 			{"params", loadParams},
 			{"plans", loadPlans},
 			{"kantor", loadKantor},
@@ -87,6 +89,43 @@ func (r *ConfigRepo) Load(ctx context.Context) (*siteconfig.Document, error) {
 		doc.Timezone = "Asia/Jakarta"
 	}
 	return doc, nil
+}
+
+func loadPricingRules(tx *gorm.DB, doc *siteconfig.Document) error {
+	row := struct {
+		WeeklyMinDays                 int
+		MonthlyMinDays                int
+		ConsecutiveFlexiWeeklyMaxDays int
+		FlexiMonthlyMaxSpanDays       int
+		WeekdayRoutineMaxSpanDays     int
+		WeeklyRoutineMaxSpanDays      int
+		WeeklyRoutineMinDaysInWeek    int
+		PaxTableMaxPax                int
+	}{}
+	if err := tx.Raw(`
+		SELECT weekly_min_days, monthly_min_days, consecutive_flexi_weekly_max_days,
+		       flexi_monthly_max_span_days, weekday_routine_max_span_days,
+		       weekly_routine_max_span_days, weekly_routine_min_days_in_week,
+		       pax_table_max_pax
+		  FROM pricing_rules WHERE only_row`).Scan(&row).Error; err != nil {
+		return err
+	}
+	doc.PricingRules = pricing.Rules{
+		WeeklyMinDays:                 row.WeeklyMinDays,
+		MonthlyMinDays:                row.MonthlyMinDays,
+		ConsecutiveFlexiWeeklyMaxDays: row.ConsecutiveFlexiWeeklyMaxDays,
+		FlexiMonthlyMaxSpanDays:       row.FlexiMonthlyMaxSpanDays,
+		WeekdayRoutineMaxSpanDays:     row.WeekdayRoutineMaxSpanDays,
+		WeeklyRoutineMaxSpanDays:      row.WeeklyRoutineMaxSpanDays,
+		WeeklyRoutineMinDaysInWeek:    row.WeeklyRoutineMinDaysInWeek,
+		PaxTableMaxPax:                row.PaxTableMaxPax,
+	}
+	// A database restored without this row would otherwise price every order
+	// through a zero-valued rule set, which classifies everything as Bulanan.
+	if doc.PricingRules.Validate() != nil {
+		doc.PricingRules = pricing.Default()
+	}
+	return nil
 }
 
 func loadParams(tx *gorm.DB, doc *siteconfig.Document) error {

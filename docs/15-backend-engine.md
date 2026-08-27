@@ -37,9 +37,14 @@ It serves JSON; an overlay reads that JSON and rewrites the DOM.
 
 ---
 
-## The one thing it cannot do
+## The one thing it cannot do on its own
 
-**It cannot change what the order calculator charges.**
+> **Updated 2026-08-27.** This section describes the *content* engine. The order
+> calculator has since been ported to the backend as well, with an overlay that
+> can make the server's figure authoritative — see [[16-server-side-pricing]].
+> What follows still applies to the `data-rates` attributes themselves.
+
+**This service cannot change what the order calculator charges.**
 
 The order app captures `data-rates` into a closure the moment its `<script>`
 runs:
@@ -71,7 +76,7 @@ page disagree, it logs:
 | Weekly menu cycles | ✅ | API call; live on next page load |
 | Contact details (WhatsApp, email) | ✅ | API call |
 | Everything else in the document | ✅ stored, ⚠️ not yet wired into the DOM | see *What is not hydrated yet* |
-| **Subscription rates, tier prices, Kantor bands** | ❌ | stored and validated, but the calculator uses the captured values until the page is re-captured |
+| **Subscription rates, tier prices, Kantor bands** | ⚠️ | stored and validated; the page's own calculator uses the captured values until re-capture, but `pricing.html` in `authoritative` mode makes the server's figure win — see [[16-server-side-pricing]] |
 
 This is the honest cost of runtime hydration into a frozen page. The fix, if it
 ever matters, is to inject the config into `<head>` at build time so it lands
